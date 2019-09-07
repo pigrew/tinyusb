@@ -35,7 +35,9 @@
 
 #include "device/dcd.h"
 #include "stm32f0xx.h"
+#include "portable/st/stm32f0/dcd_stm32f0_pvt_st.h"
 #include "uart_util.h"
+
 char msg[100];
 
 #define USB_ISTR_ALL_EVENTS (USB_ISTR_PMAOVR | USB_ISTR_ERR | USB_ISTR_WKUP | USB_ISTR_SUSP | \
@@ -43,83 +45,34 @@ char msg[100];
 
 #define EPREG(n) (((__IO uint16_t*)USB_BASE)[n*2])
 
-/* SetENDPOINT */
-#define PCD_SET_ENDPOINT(USBx, bEpNum,wRegValue)  (*((__IO uint16_t *)(((uint32_t)(&(USBx)->EP0R + (bEpNum) * 2U))))= (uint16_t)(wRegValue))
-/* GetENDPOINT */
-#define PCD_GET_ENDPOINT(USBx, bEpNum)            (*((__IO uint16_t *)(((uint32_t)(&(USBx)->EP0R + (bEpNum) * 2U)))))
-#define PCD_SET_EPTYPE(USBx, bEpNum,wType) (PCD_SET_ENDPOINT((USBx), (bEpNum),\
-                                  (((((uint32_t)(PCD_GET_ENDPOINT((USBx), (bEpNum)))) & ((uint32_t)(USB_EP_T_MASK))) | ((uint32_t)(wType))) | USB_EP_CTR_RX | USB_EP_CTR_TX)))
-#define PCD_GET_EPTYPE(USBx, bEpNum) (((uint16_t)(PCD_GET_ENDPOINT((USBx), (bEpNum)))) & USB_EP_T_FIELD)
-
-
-
-#define PCD_EP_TX_ADDRESS(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8)+     ((uint32_t)(USBx) + 0x400U)))))
-#define PCD_EP_TX_CNT(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+2)+  ((uint32_t)(USBx) + 0x400U)))))
-
-#define PCD_EP_RX_ADDRESS(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+4)+ ((uint32_t)(USBx) + 0x400U)))))
-#define PCD_EP_RX_CNT(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+6)+  ((uint32_t)(USBx) + 0x400U)))))
-
-#define PCD_SET_EP_TX_CNT(USBx, bEpNum,wCount) (*PCD_EP_TX_CNT((USBx), (bEpNum)) = (wCount))
-#define PCD_SET_EP_RX_CNT(USBx, bEpNum,wCount) {\
-    uint16_t *pdwReg =PCD_EP_RX_CNT((USBx),(bEpNum)); \
-    PCD_SET_EP_CNT_RX_REG((pdwReg), (wCount))\
-  }
-
-/**
-  * @brief  sets the status for tx transfer (bits STAT_TX[1:0]).
-  * @param  USBx USB peripheral instance register address.
-  * @param  bEpNum Endpoint Number.
-  * @param  wState new state
-  * @retval None
-  */
-#define PCD_SET_EP_TX_STATUS(USBx, bEpNum, wState) { register uint16_t _wRegVal;\
-   \
-    _wRegVal = (uint32_t) (((uint32_t)(PCD_GET_ENDPOINT((USBx), (bEpNum)))) & USB_EPTX_DTOGMASK);\
-   /* toggle first bit ? */     \
-   if((USB_EPTX_DTOG1 & (wState))!= 0U)\
-   {                                                                            \
-     _wRegVal ^=(uint16_t) USB_EPTX_DTOG1;        \
-   }                                                                            \
-   /* toggle second bit ?  */         \
-   if((USB_EPTX_DTOG2 & ((uint32_t)(wState)))!= 0U)      \
-   {                                                                            \
-     _wRegVal ^=(uint16_t) USB_EPTX_DTOG2;        \
-   }                                                                            \
-   PCD_SET_ENDPOINT((USBx), (bEpNum), (((uint32_t)(_wRegVal)) | USB_EP_CTR_RX|USB_EP_CTR_TX));\
-  } /* PCD_SET_EP_TX_STATUS */
-
-/**
-  * @brief  sets the status for rx transfer (bits STAT_TX[1:0])
-  * @param  USBx USB peripheral instance register address.
-  * @param  bEpNum Endpoint Number.
-  * @param  wState new state
-  * @retval None
-  */
-#define PCD_SET_EP_RX_STATUS(USBx, bEpNum,wState) {\
-    register uint16_t _wRegVal;   \
-    \
-    _wRegVal = (uint32_t) (((uint32_t)(PCD_GET_ENDPOINT((USBx), (bEpNum)))) & USB_EPRX_DTOGMASK);\
-    /* toggle first bit ? */  \
-    if((USB_EPRX_DTOG1 & (wState))!= 0U) \
-    {                                                                             \
-      _wRegVal ^= (uint16_t) USB_EPRX_DTOG1;  \
-    }                                                                             \
-    /* toggle second bit ? */  \
-    if((USB_EPRX_DTOG2 & ((uint32_t)(wState)))!= 0U) \
-    {                                                                             \
-      _wRegVal ^= (uint16_t) USB_EPRX_DTOG2;  \
-    }                                                                             \
-    PCD_SET_ENDPOINT((USBx), (bEpNum), (((uint32_t)(_wRegVal)) | USB_EP_CTR_RX|USB_EP_CTR_TX)); \
-  } /* PCD_SET_EP_RX_STATUS */
+// HW supports max of 8 endpoints, but this can be reduced to save RAM.
+#define MAX_EP 8
 
 
 // WARNING: APB clock must be >=10 MHz
+
+
+typedef struct {
+  uint8_t * buffer;
+  uint16_t total_len;
+  uint16_t queued_len;
+  bool need_zero_len_tx;
+} xfer_ctl_t;
+
+static xfer_ctl_t  xfer_status[MAX_EP][2];
+#define XFER_CTL_BASE(_epnum, _dir) &xfer_status[_epnum][_dir]
+
+static TU_ATTR_ALIGNED(4) uint32_t _setup_packet[6];
+
+static uint8_t newDADDR; // Used to set the new device address during the CTR IRQ handler
 
 // EP Buffers assigned from end of memory location, to minimize their chance of crashing
 // into the stack.
 static uint16_t ep_buf_ptr;
 static void dcd_handle_bus_reset();
-
+static void dcd_write_packet_memory(uint16_t dst, const void *__restrict src, size_t wNBytes);
+static void dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wNBytes);
+static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix);
 
 //--------------------------------------------------------------------+
 // MACRO TYPEDEF CONSTANT ENUM DECLARATION
@@ -189,8 +142,13 @@ void dcd_set_address(uint8_t rhport, uint8_t dev_addr)
 
   sprintf(msg,"dcd_set_address EP0REG=%04hx,addr=%02hx\n", USB->EP0R,(uint16_t)dev_addr);
   uart_tx_sync(msg, strlen(msg));
-  USB->DADDR &= ~USB_DADDR_ADD;
-  USB->DADDR |= dev_addr;
+
+  newDADDR = dev_addr;
+
+  // Respond with status
+  //(CTR handler will actually change the address once it sees that the transmission is complete)
+  dcd_edpt_xfer(rhport, tu_edpt_addr(0, TUSB_DIR_IN), NULL, 0);
+
 }
 
 // Receive Set Config request
@@ -226,7 +184,8 @@ static void dcd_handle_bus_reset() {
   ep_buf_ptr = 1024;
   dcd_edpt_open (0, &ep0OUT_desc);
   dcd_edpt_open (0, &ep0IN_desc);
-  USB->DADDR |= USB_DADDR_EF; // Set enable flag
+  newDADDR = 0;
+  USB->DADDR = USB_DADDR_EF; // Set enable flag, and clear DADDR
 }
 
 static void dcd_ep_ctr_handler()
@@ -242,9 +201,11 @@ static void dcd_ep_ctr_handler()
   /* stay in loop while pending interrupts */
   while (((wIstr = USB->ISTR) & USB_ISTR_CTR) != 0U)
   {
-    /* extract highest priority endpoint number */
+    /* extract highest priority endpoint index */
     EPindex = (uint8_t)(wIstr & USB_ISTR_EP_ID);
 
+    sprintf(msg,"IRQ-CTR EPindex=%hx\n",(uint16_t)EPindex);
+    uart_tx_sync(msg,strlen(msg));
     if (EPindex == 0U)
     {
       /* Decode and service control endpoint interrupt */
@@ -252,69 +213,78 @@ static void dcd_ep_ctr_handler()
       /* DIR bit = origin of the interrupt */
       if ((wIstr & USB_ISTR_DIR) == 0U)
       {
+        sprintf(msg,"CTR EP0 IN epix=%hx\n",(uint16_t)EPindex);
+        uart_tx_sync(msg,strlen(msg));
         /* DIR = 0  => IN  int */
         /* DIR = 0 implies that (EP_CTR_TX = 1) always  */
         PCD_CLEAR_TX_EP_CTR(USB, PCD_ENDP0);
-       // ep = &hpcd->IN_ep[0];
-        /*
-        ep->xfer_count = PCD_GET_EP_TX_CNT(hpcd->Instance, ep->num);
-        ep->xfer_buff += ep->xfer_count;
 
-        /* TX COMPLETE * /
-        HAL_PCD_DataInStageCallback(hpcd, 0U);
+        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
 
-
-        if((hpcd->USB_Address > 0U)&& ( ep->xfer_len == 0U))
-        {
-          hpcd->Instance->DADDR = (hpcd->USB_Address | USB_DADDR_EF);
-          hpcd->USB_Address = 0U;
+        if((xfer->total_len == xfer->queued_len) && !xfer->need_zero_len_tx) {
+          dcd_event_xfer_complete(0, 0x80 + EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
+          if((newDADDR != 0) && ( xfer->total_len == 0U))
+          {
+            // Delayed setting of the DADDR after the 0-len DATA packet acking the request is sent.
+            sprintf(msg,"IRQ-CTR Finally setting DADDR=%hx\n",(uint16_t)newDADDR);
+            uart_tx_sync(msg,strlen(msg));
+            USB->DADDR &= ~USB_DADDR_ADD;
+            USB->DADDR |= newDADDR;
+            newDADDR = 0;
+          }
+        } else {
+          dcd_transmit_packet(xfer,EPindex);
         }
-*/
-      } else {
+      }
+      else
+      {
         /* DIR = 1 & CTR_RX       => SETUP or OUT int */
         /* DIR = 1 & (CTR_TX | CTR_RX) => 2 int pending */
+
+        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
+
         //ep = &hpcd->OUT_ep[0];
         wEPVal = PCD_GET_ENDPOINT(USB, PCD_ENDP0);
 
-        if ((wEPVal & USB_EP_SETUP) != 0U) {
-          uint16_t setupBuf[4];
-          uint16_t *packetBuf = USB_PMAADDR +  *(PCD_EP_RX_ADDRESS(USB,PCD_ENDP0));
+        if ((wEPVal & USB_EP_SETUP) != 0U) // SETUP
+        {
+          sprintf(msg,"CTR EP0 SETUP\n",(uint16_t)EPindex);
+          uart_tx_sync(msg,strlen(msg));
+          // The setup_received function uses memcpy, so this must first copy the setup data into
+          // user memory, to allow for the 32-bit access that memcpy performs.
+          uint8_t userMemBuf[8];
           /* Get SETUP Packet*/
           count = PCD_GET_EP_RX_CNT(USB, EPindex);
-          // FIXME: Assert count is 8???
+          //TU_ASSERT_ERR(count == 8);
+          dcd_read_packet_memory(userMemBuf, *PCD_EP_RX_ADDRESS(USB,PCD_ENDP0), 8);
           /* SETUP bit kept frozen while CTR_RX = 1*/
-          // Packet memory can only be accessed with byte and 16-bt loads... so can't just use memcpy.
+          sprintf(msg,"SETUP len=%d\n", count);
+          uart_tx_sync(msg,strlen(msg));
+          dcd_event_setup_received(0, (uint8_t*)userMemBuf, true);
+          PCD_CLEAR_RX_EP_CTR(USB, PCD_ENDP0);
+        }
+        else if ((wEPVal & USB_EP_CTR_RX) != 0U) // OUT
+        {
 
-          sprintf(msg,"SETUP");
-          uart_tx_sync(msg, strlen(msg));
-          for(int i=0; i<4; i++) {
-            setupBuf[i] = packetBuf[i];
-            sprintf(msg," %04hx",setupBuf[i]);
-            uart_tx_sync(msg, strlen(msg));
-          }
-          uart_tx_sync("\n",1);
-          dcd_event_setup_received(0, setupBuf, true);
+          sprintf(msg,"CTR EP0 OUT\n",(uint16_t)EPindex);
+          uart_tx_sync(msg,strlen(msg));
           PCD_CLEAR_RX_EP_CTR(USB, PCD_ENDP0);
 
-
-        } else if ((wEPVal & USB_EP_CTR_RX) != 0U) {
-
-          PCD_CLEAR_RX_EP_CTR(USB, PCD_ENDP0);
           /* Get Control Data OUT Packet */
           count = PCD_GET_EP_RX_CNT(USB,PCD_ENDP0);
-/*
-          if (ep->xfer_count != 0U)
+
+          if (count != 0U)
           {
-            PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaadress, ep->xfer_count);
-            ep->xfer_buff+=ep->xfer_count;
+            dcd_read_packet_memory(xfer->buffer, *PCD_EP_RX_ADDRESS(USB,PCD_ENDP0), count);
+            xfer->queued_len += count;
           }
 
-          /* Process Control Data OUT Packet* /
-           HAL_PCD_DataOutStageCallback(hpcd, 0U);
+          /* Process Control Data OUT Packet*/
+          dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
 
-          PCD_SET_EP_RX_CNT(hpcd->Instance, PCD_ENDP0, ep->maxpacket)
-          PCD_SET_EP_RX_STATUS(hpcd->Instance, PCD_ENDP0, USB_EP_RX_VALID)
-          */
+          PCD_SET_EP_RX_CNT(USB, PCD_ENDP0, 64);
+          PCD_SET_EP_RX_STATUS(USB, PCD_ENDP0, USB_EP_RX_NAK)
+
         }
 
       }
@@ -442,8 +412,8 @@ void dcd_fs_irqHandler(void) {
   //USB_OTG_OUTEndpointTypeDef * out_ep = OUT_EP_BASE;
   //USB_OTG_INEndpointTypeDef * in_ep = IN_EP_BASE;
   //uint32_t wInterrupt_Mask = 0U;
-  sprintf(msg,"IRQ ISTR=%04hx;CNTR=%04hx; \n",USB->ISTR, USB->CNTR);
-  uart_tx_sync(msg, strlen(msg));
+  //sprintf(msg,"IRQ ISTR=%04hx;CNTR=%04hx; \n",USB->ISTR, USB->CNTR);
+  //uart_tx_sync(msg, strlen(msg));
 
   uint16_t int_status = USB->ISTR;
  // unused IRQs: (USB_ISTR_PMAOVR | USB_ISTR_ERR | USB_ISTR_WKUP | USB_ISTR_SUSP | USB_ISTR_ESOF | USB_ISTR_L1REQ )
@@ -492,8 +462,8 @@ void dcd_fs_irqHandler(void) {
   }
 
   if(int_status & USB_ISTR_SOF) {
-    sprintf(msg,"IRQ-SOF\n");
-    uart_tx_sync(msg,strlen(msg));
+    //sprintf(msg,"IRQ-SOF\n");
+    //uart_tx_sync(msg,strlen(msg));
     USB->ISTR &= ~USB_ISTR_SOF;
     dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
   }
@@ -504,8 +474,8 @@ void dcd_fs_irqHandler(void) {
     USB->ISTR &= ~USB_ISTR_ESOF;
   }
 
-  sprintf(msg,"IRQ-exit ISTR=%04hx; CNTR=%04hx; EP0R=%04hx\n",USB->ISTR, USB->CNTR, USB->EP0R);
-  uart_tx_sync(msg,strlen(msg));
+  //sprintf(msg,"IRQ-exit ISTR=%04hx; CNTR=%04hx; EP0R=%04hx\n",USB->ISTR, USB->CNTR, USB->EP0R);
+  //uart_tx_sync(msg,strlen(msg));
 }
 
 //--------------------------------------------------------------------+
@@ -561,11 +531,62 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   return true;
 }
 
+// Currently, single-buffered, and only 64 bytes at a time (max)
+
+static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
+{
+  uint16_t len = xfer->total_len - xfer->queued_len;
+  xfer->need_zero_len_tx = false;
+
+  if(len > 64) // max packet size for FS transfer
+    len = 64;
+  dcd_write_packet_memory(*PCD_EP_TX_ADDRESS(USB,ep_ix), &(xfer->buffer[xfer->queued_len]), len);
+  xfer->queued_len += len;
+  if(len == 64 && (xfer->queued_len == xfer->total_len) )
+    xfer->need_zero_len_tx = true;
+
+  PCD_SET_EP_TX_CNT(USB,ep_ix,len);
+  PCD_SET_EP_TX_STATUS(USB, ep_ix, USB_EP_TX_VALID)
+}
+
 bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
 {
-  sprintf(msg,"dcd_edpt_xfer ep_addr=%x, bytes=%x,EP0REG=%04hx\n",ep_addr, total_bytes, USB->EP0R);
+  (void) rhport;
+
+  uint8_t const epnum = tu_edpt_number(ep_addr);
+  uint8_t const dir   = tu_edpt_dir(ep_addr);
+
+  sprintf(msg,"dcd_edpt_xfer ep_addr=0x%x, bytes=0x%x, dir=%hx/%s, EP0REG=%04hx\n",
+      ep_addr, total_bytes, (uint16_t)dir,
+      (dir==TUSB_DIR_OUT)?"OUT" : "IN",
+          USB->EP0R);
   uart_tx_sync(msg, strlen(msg));
-  return false;
+
+  // A setup token can occur immediately after an OUT STATUS packet so make sure we have a valid
+  // buffer for the control endpoint.
+  if (epnum == 0 && dir == 0 && buffer == NULL) {
+      buffer = (uint8_t*)_setup_packet;
+  }
+
+  xfer_ctl_t * xfer = XFER_CTL_BASE(epnum,dir);
+
+  xfer->buffer = buffer;
+  xfer->total_len = total_bytes;
+  xfer->queued_len = 0;
+  xfer->need_zero_len_tx = true;
+
+  if ( dir == TUSB_DIR_OUT )
+  {
+
+    PCD_SET_EP_RX_CNT(USB,epnum,total_bytes);
+    PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_TX_VALID);
+  }
+  else
+  {
+    dcd_transmit_packet(xfer,epnum);
+  }
+
+  return true;
 }
 
 void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
@@ -579,6 +600,68 @@ void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr)
 {
   sprintf(msg,"dcd_edpt_stall epaddr=%x, EP0REG=%04hx\n",ep_addr, USB->EP0R);
   uart_tx_sync(msg, strlen(msg));
+}
+
+// Packet buffer access can only be 8- or 16-bit.
+/**
+  * @brief Copy a buffer from user memory area to packet memory area (PMA).
+  *        This uses byte-access for user memory (so support non-aligned buffers)
+  *        and 16-bit access for packet memory.
+  * @param   dst, but not necessary in system-memory addressing
+  * @param   pbUsrBuf pointer to user memory area.
+  * @param   wPMABufAddr address into PMA.
+  * @param   wNBytes no. of bytes to be copied.
+  * @retval None
+  */
+static void dcd_write_packet_memory(uint16_t dst, const void *__restrict src, size_t wNBytes)
+{
+  uint32_t n =  ((uint32_t)((uint32_t)wNBytes + 1U)) >> 1U;
+  uint32_t i;
+  uint16_t temp1, temp2;
+  const uint8_t * srcVal;
+  uint16_t *pdwVal;
+
+  srcVal = src;
+  pdwVal = (uint16_t*)( ((uint8_t*)USB) + 0x400U + dst );
+
+  for (i = n; i != 0; i--)
+  {
+    temp1 = (uint16_t) *srcVal;
+    srcVal++;
+    temp2 = temp1 | ((uint16_t)((uint16_t) ((*srcVal) << 8U))) ;
+    *pdwVal++ = temp2;
+    srcVal++;
+  }
+}
+
+/**
+  * @brief Copy a buffer from user memory area to packet memory area (PMA).
+  *        Uses byte-access of system memory and 16-bit access of packet memory
+  * @param   wNBytes no. of bytes to be copied.
+  * @retval None
+  */
+static void dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wNBytes)
+{
+  uint32_t n = (uint32_t)wNBytes >> 1U;
+  uint32_t i;
+  const uint16_t *pdwVal;
+  uint32_t temp;
+
+  pdwVal = (uint16_t*)( ((uint8_t*)USB) + 0x400U + src );
+  uint8_t *dstVal = (uint8_t*)dst;
+
+  for (i = n; i != 0U; i--)
+  {
+    temp = *pdwVal++;
+    *dstVal++ = ((temp >> 0) & 0xFF);
+    *dstVal++ = ((temp >> 8) & 0xFF);
+  }
+
+  if (wNBytes % 2)
+  {
+    temp = *pdwVal++;
+    *dstVal++ = ((temp >> 0) & 0xFF);
+  }
 }
 
 #endif

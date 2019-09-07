@@ -32,10 +32,12 @@
 #include "usbd.h"
 #include "device/usbd_pvt.h"
 #include "dcd.h"
-
+#include "uart_util.h"
 #ifndef CFG_TUD_TASK_QUEUE_SZ
 #define CFG_TUD_TASK_QUEUE_SZ   16
 #endif
+
+char msg[100];
 
 //--------------------------------------------------------------------+
 // Device Data
@@ -346,6 +348,8 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 {
   usbd_control_set_complete_callback(NULL);
 
+  sprintf(msg,"ProcessCtrlReq\n");
+  uart_tx_sync(msg,strlen(msg));
   // Vendor request
   if ( p_request->bmRequestType_bit.type == TUSB_REQ_TYPE_VENDOR )
   {
@@ -366,9 +370,17 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
         return false;
       }
 
+      sprintf(msg,"ProcessCtrlReq Req=0x%hx len=0x%hx\n",
+          (uint16_t) p_request->bRequest,
+          (uint16_t) p_request->wLength);
+      uart_tx_sync(msg,strlen(msg));
+
       switch ( p_request->bRequest )
       {
         case TUSB_REQ_SET_ADDRESS:
+
+          sprintf(msg,"ProcessCtrlReq SetAddr\n");
+          uart_tx_sync(msg,strlen(msg));
           // Depending on mcu, status phase could be sent either before or after changing device address
           // Therefore DCD must include zero-length status response
           dcd_set_address(rhport, (uint8_t) p_request->wValue);
@@ -377,6 +389,8 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 
         case TUSB_REQ_GET_CONFIGURATION:
         {
+          sprintf(msg,"ProcessCtrlReq GetConfig\n");
+          uart_tx_sync(msg,strlen(msg));
           uint8_t cfgnum = _usbd_dev.configured ? 1 : 0;
           tud_control_xfer(rhport, p_request, &cfgnum, 1);
         }
@@ -395,6 +409,9 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
         break;
 
         case TUSB_REQ_GET_DESCRIPTOR:
+
+          sprintf(msg,"ProcessCtrlReq GetDescript\n");
+          uart_tx_sync(msg,strlen(msg));
           TU_VERIFY( process_get_descriptor(rhport, p_request) );
         break;
 
