@@ -59,7 +59,11 @@ char msg[100];
 #define PCD_EP_RX_ADDRESS(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+4)+ ((uint32_t)(USBx) + 0x400U)))))
 #define PCD_EP_RX_CNT(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+6)+  ((uint32_t)(USBx) + 0x400U)))))
 
-
+#define PCD_SET_EP_TX_CNT(USBx, bEpNum,wCount) (*PCD_EP_TX_CNT((USBx), (bEpNum)) = (wCount))
+#define PCD_SET_EP_RX_CNT(USBx, bEpNum,wCount) {\
+    uint16_t *pdwReg =PCD_EP_RX_CNT((USBx),(bEpNum)); \
+    PCD_SET_EP_CNT_RX_REG((pdwReg), (wCount))\
+  }
 
 /**
   * @brief  sets the status for tx transfer (bits STAT_TX[1:0]).
@@ -153,7 +157,8 @@ void dcd_init (uint8_t rhport)
   }
   // Need to initialize the BTABLE for EP0 at this point (though setting up the EP0R is unneeded)
   //dcd_handle_bus_reset();
-
+  for(int i=0;i<512; i++)
+    ((uint16_t*)USB_PMAADDR)[i] = 0;
   USB->CNTR |= USB_CNTR_RESETM | USB_CNTR_SOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM |
       USB_CNTR_ESOFM;
   dcd_handle_bus_reset();
@@ -224,6 +229,215 @@ static void dcd_handle_bus_reset() {
   USB->DADDR |= USB_DADDR_EF; // Set enable flag
 }
 
+static void dcd_ep_ctr_handler()
+{
+  //PCD_EPTypeDef *ep;
+  uint16_t count=0U;
+  uint8_t EPindex;
+  __IO uint16_t wIstr;
+  __IO uint16_t wEPVal = 0U;
+
+  // stack variables to pass to USBD
+
+  /* stay in loop while pending interrupts */
+  while (((wIstr = USB->ISTR) & USB_ISTR_CTR) != 0U)
+  {
+    /* extract highest priority endpoint number */
+    EPindex = (uint8_t)(wIstr & USB_ISTR_EP_ID);
+
+    if (EPindex == 0U)
+    {
+      /* Decode and service control endpoint interrupt */
+
+      /* DIR bit = origin of the interrupt */
+      if ((wIstr & USB_ISTR_DIR) == 0U)
+      {
+        /* DIR = 0  => IN  int */
+        /* DIR = 0 implies that (EP_CTR_TX = 1) always  */
+        PCD_CLEAR_TX_EP_CTR(USB, PCD_ENDP0);
+       // ep = &hpcd->IN_ep[0];
+        /*
+        ep->xfer_count = PCD_GET_EP_TX_CNT(hpcd->Instance, ep->num);
+        ep->xfer_buff += ep->xfer_count;
+
+        /* TX COMPLETE * /
+        HAL_PCD_DataInStageCallback(hpcd, 0U);
+
+
+        if((hpcd->USB_Address > 0U)&& ( ep->xfer_len == 0U))
+        {
+          hpcd->Instance->DADDR = (hpcd->USB_Address | USB_DADDR_EF);
+          hpcd->USB_Address = 0U;
+        }
+*/
+      } else {
+        /* DIR = 1 & CTR_RX       => SETUP or OUT int */
+        /* DIR = 1 & (CTR_TX | CTR_RX) => 2 int pending */
+        //ep = &hpcd->OUT_ep[0];
+        wEPVal = PCD_GET_ENDPOINT(USB, PCD_ENDP0);
+
+        if ((wEPVal & USB_EP_SETUP) != 0U) {
+          uint16_t setupBuf[4];
+          uint16_t *packetBuf = USB_PMAADDR +  *(PCD_EP_RX_ADDRESS(USB,PCD_ENDP0));
+          /* Get SETUP Packet*/
+          count = PCD_GET_EP_RX_CNT(USB, EPindex);
+          // FIXME: Assert count is 8???
+          /* SETUP bit kept frozen while CTR_RX = 1*/
+          // Packet memory can only be accessed with byte and 16-bt loads... so can't just use memcpy.
+
+          sprintf(msg,"SETUP");
+          uart_tx_sync(msg, strlen(msg));
+          for(int i=0; i<4; i++) {
+            setupBuf[i] = packetBuf[i];
+            sprintf(msg," %04hx",setupBuf[i]);
+            uart_tx_sync(msg, strlen(msg));
+          }
+          uart_tx_sync("\n",1);
+          dcd_event_setup_received(0, setupBuf, true);
+          PCD_CLEAR_RX_EP_CTR(USB, PCD_ENDP0);
+
+
+        } else if ((wEPVal & USB_EP_CTR_RX) != 0U) {
+
+          PCD_CLEAR_RX_EP_CTR(USB, PCD_ENDP0);
+          /* Get Control Data OUT Packet */
+          count = PCD_GET_EP_RX_CNT(USB,PCD_ENDP0);
+/*
+          if (ep->xfer_count != 0U)
+          {
+            PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaadress, ep->xfer_count);
+            ep->xfer_buff+=ep->xfer_count;
+          }
+
+          /* Process Control Data OUT Packet* /
+           HAL_PCD_DataOutStageCallback(hpcd, 0U);
+
+          PCD_SET_EP_RX_CNT(hpcd->Instance, PCD_ENDP0, ep->maxpacket)
+          PCD_SET_EP_RX_STATUS(hpcd->Instance, PCD_ENDP0, USB_EP_RX_VALID)
+          */
+        }
+
+      }
+    }
+   /* else
+    {
+
+      /* Decode and service non control endpoints interrupt  * /
+
+      /* process related endpoint register * /
+      wEPVal = PCD_GET_ENDPOINT(hpcd->Instance, EPindex);
+      if ((wEPVal & USB_EP_CTR_RX) != 0U)
+      {
+        /* clear int flag * /
+        PCD_CLEAR_RX_EP_CTR(hpcd->Instance, EPindex);
+        ep = &hpcd->OUT_ep[EPindex];
+
+        /* OUT double Buffering* /
+        if (ep->doublebuffer == 0U)
+        {
+          count = PCD_GET_EP_RX_CNT(hpcd->Instance, ep->num);
+          if (count != 0U)
+          {
+            PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaadress, count);
+          }
+        }
+        else
+        {
+
+          if ((PCD_GET_ENDPOINT(hpcd->Instance, ep->num)& USB_EP_DTOG_RX) == USB_EP_DTOG_RX)
+          {
+            /*read from endpoint BUF0Addr buffer* /
+            count = PCD_GET_EP_DBUF0_CNT(hpcd->Instance, ep->num);
+            if (count != 0U)
+            {
+              PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaaddr0, count);
+            }
+          }
+          else
+          {
+            /*read from endpoint BUF1Addr buffer* /
+            count = PCD_GET_EP_DBUF1_CNT(hpcd->Instance, ep->num);
+            if (count != 0U)
+            {
+              PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaaddr1, count);
+            }
+          }
+          PCD_FreeUserBuffer(hpcd->Instance, ep->num, PCD_EP_DBUF_OUT)
+        }
+        /*multi-packet on the NON control OUT endpoint* /
+        ep->xfer_count+=count;
+        ep->xfer_buff+=count;
+
+        if ((ep->xfer_len == 0U) || (count < ep->maxpacket))
+        {
+          /* RX COMPLETE * /
+          HAL_PCD_DataOutStageCallback(hpcd, ep->num);
+        }
+        else
+        {
+          HAL_PCD_EP_Receive(hpcd, ep->num, ep->xfer_buff, ep->xfer_len);
+        }
+
+      } /* if((wEPVal & EP_CTR_RX) * /
+
+      if ((wEPVal & USB_EP_CTR_TX) != 0U)
+      {
+        ep = &hpcd->IN_ep[EPindex];
+
+        /* clear int flag * /
+        PCD_CLEAR_TX_EP_CTR(hpcd->Instance, EPindex);
+
+        /* IN double Buffering* /
+        if (ep->doublebuffer == 0U)
+        {
+          ep->xfer_count = PCD_GET_EP_TX_CNT(hpcd->Instance, ep->num);
+          if (ep->xfer_count != 0)
+          {
+            PCD_WritePMA(hpcd->Instance, ep->xfer_buff, ep->pmaadress, ep->xfer_count);
+          }
+        }
+        else
+        {
+          if ((PCD_GET_ENDPOINT(hpcd->Instance, ep->num)& USB_EP_DTOG_TX) == USB_EP_DTOG_TX)
+          {
+            /*read from endpoint BUF0Addr buffer* /
+            ep->xfer_count = PCD_GET_EP_DBUF0_CNT(hpcd->Instance, ep->num);
+            if (ep->xfer_count != 0U)
+            {
+              PCD_WritePMA(hpcd->Instance, ep->xfer_buff, ep->pmaaddr0, ep->xfer_count);
+            }
+          }
+          else
+          {
+            /*read from endpoint BUF1Addr buffer* /
+            ep->xfer_count = PCD_GET_EP_DBUF1_CNT(hpcd->Instance, ep->num);
+            if (ep->xfer_count != 0U)
+            {
+              PCD_WritePMA(hpcd->Instance, ep->xfer_buff, ep->pmaaddr1, ep->xfer_count);
+            }
+          }
+          PCD_FreeUserBuffer(hpcd->Instance, ep->num, PCD_EP_DBUF_IN)
+        }
+        /*multi-packet on the NON control IN endpoint* /
+        ep->xfer_count = PCD_GET_EP_TX_CNT(hpcd->Instance, ep->num);
+        ep->xfer_buff+=ep->xfer_count;
+
+        /* Zero Length Packet? * /
+        if (ep->xfer_len == 0U)
+        {
+          /* TX COMPLETE * /
+          HAL_PCD_DataInStageCallback(hpcd, ep->num);
+        }
+        else
+        {
+          HAL_PCD_EP_Transmit(hpcd, ep->num, ep->xfer_buff, ep->xfer_len);
+        }
+      }
+    }*/
+  }
+
+}
+
 void dcd_fs_irqHandler(void) {
   //USB_OTG_OUTEndpointTypeDef * out_ep = OUT_EP_BASE;
   //USB_OTG_INEndpointTypeDef * in_ep = IN_EP_BASE;
@@ -240,7 +454,7 @@ void dcd_fs_irqHandler(void) {
     uart_tx_sync(msg,strlen(msg));
     /* servicing of the endpoint correct transfer interrupt */
     /* clear of the CTR flag into the sub */
-    //PCD_EP_ISR_Handler(hpcd);
+    dcd_ep_ctr_handler();
     USB->ISTR &= ~USB_ISTR_CTR;
   }
   if(int_status & USB_ISTR_RESET) {
@@ -275,21 +489,21 @@ void dcd_fs_irqHandler(void) {
     /* clear of the ISTR bit must be done after setting of CNTR_FSUSP */
     USB->ISTR &= ~USB_ISTR_SUSP;
 
-
-    if(int_status & USB_ISTR_SOF) {
-      sprintf(msg,"IRQ-SOF\n");
-      uart_tx_sync(msg,strlen(msg));
-      USB->ISTR &= ~USB_ISTR_SOF;
-      dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
-    }
-
-    if(int_status & USB_ISTR_ESOF) {
-      sprintf(msg,"IRQ-ESOF\n");
-      uart_tx_sync(msg,strlen(msg));
-      USB->ISTR &= ~USB_ISTR_ESOF;
-    }
-
   }
+
+  if(int_status & USB_ISTR_SOF) {
+    sprintf(msg,"IRQ-SOF\n");
+    uart_tx_sync(msg,strlen(msg));
+    USB->ISTR &= ~USB_ISTR_SOF;
+    dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
+  }
+
+  if(int_status & USB_ISTR_ESOF) {
+    sprintf(msg,"IRQ-ESOF\n");
+    uart_tx_sync(msg,strlen(msg));
+    USB->ISTR &= ~USB_ISTR_ESOF;
+  }
+
   sprintf(msg,"IRQ-exit ISTR=%04hx; CNTR=%04hx; EP0R=%04hx\n",USB->ISTR, USB->CNTR, USB->EP0R);
   uart_tx_sync(msg,strlen(msg));
 }
@@ -334,13 +548,13 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   ep_buf_ptr -= p_endpoint_desc->wMaxPacketSize.size; // decrement buffer pointer
 
   if(dir == TUSB_DIR_IN) {
-    *PCD_EP_TX_ADDRESS(USB,epnum) = ep_buf_ptr;
-    *PCD_EP_TX_CNT(USB,epnum) = p_endpoint_desc->wMaxPacketSize.size;
+    *PCD_EP_TX_ADDRESS(USB, epnum) = ep_buf_ptr;
+    PCD_SET_EP_RX_CNT(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
     PCD_SET_EP_TX_STATUS(USB,epnum,USB_EP_TX_NAK);
   } else {
-    *PCD_EP_RX_ADDRESS(USB,epnum) = ep_buf_ptr;
-    *PCD_EP_RX_CNT(USB,epnum) = p_endpoint_desc->wMaxPacketSize.size;
-    PCD_SET_EP_RX_STATUS(USB,epnum,USB_EP_RX_VALID);
+    *PCD_EP_RX_ADDRESS(USB, epnum) = ep_buf_ptr;
+    PCD_SET_EP_RX_CNT(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
+    PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_VALID);
   }
   sprintf(msg,"dcd_edpt_open-exit epnum=%x, dir=%x,EP0REG=%04hx\n",epnum, dir, USB->EP0R);
   uart_tx_sync(msg, strlen(msg));
