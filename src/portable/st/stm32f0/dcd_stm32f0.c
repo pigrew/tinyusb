@@ -1,6 +1,10 @@
 /* 
  * The MIT License (MIT)
  *
+ * Copyright (c) 2019 Nathan Conrad
+ *
+ * Portions:
+ * Copyright (c) 2016 STMicroelectronics
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -44,18 +48,21 @@
  * - You don't have long-running interrupts; some USB packets must be quickly responded to.
  *
  * Current driver limitations (i.e., a list of features for you to add):
+ * - STALL not handled
  * - Only tested on F070RB; other models will have an #error during compilation
+ * - No isochronous endpoints
  * - Endpoint index is the ID of the endpoint
  *   - This means that priority is given to endpoints with lower ID numbers
- * - No double-buffering
- * - No isochronous endpoints
- * - No DMA
- * - Minimal error handling
- *   - Perhaps error interrupts sholud be reported to the stack, or cause a device reset?
+ * - No way to close endpoints; Can a device be reconfigured without a reset?
  * - Packet buffer memory is copied in the interrupt.
  *   - This is better for performance, but means interrupts are disabled for longer
  *   - DMA may be the best choice, but it could also be pushed to the USBD task.
+ * - No double-buffering
+ * - No DMA
  * - No provision to control the D+ pull-up using GPIO on devices without an internal pull-up.
+ * - Minimal error handling
+ *   - Perhaps error interrupts sholud be reported to the stack, or cause a device reset?
+ * - Assumes a single USB peripheral; I think that no hardware has multiple so this is fine.
  *
  * USB documentation and  Reference implementations
  * - STM32 Reference manuals
@@ -65,12 +72,22 @@
  * - libopencm3/lib/stm32/common/st_usbfs_core.c
  *
  * - YouTube OpenTechLab 011; https://www.youtube.com/watch?v=4FOkJLp_PUw
+ *
+ * Advantages over HAL driver:
+ * - Tiny (saves RAM, assumes a single USB peripheral)
+ *
+ * Notes:
+ * - The buffer table is allocated as endpoints are opened. The allocation is only
+ *   cleared when the device is reset. This may be bad if the USB device needs
+ *   to be reconfigured.
  */
 
 #include "tusb_option.h"
 
 #if TUSB_OPT_DEVICE_ENABLED && CFG_TUSB_MCU == OPT_MCU_STM32F0
 
+// In order to reduce the dependance on HAL, we undefine this.
+// Some definitions are copied to our private include file.
 #undef USE_HAL_DRIVER
 
 #include "device/dcd.h"
@@ -78,16 +95,19 @@
 #include "portable/st/stm32f0/dcd_stm32f0_pvt_st.h"
 #include "uart_util.h"
 
-char msg[150];
-
-// HW supports max of 8 endpoints, but this can be reduced to save RAM.
-#define MAX_EP 8
+char msg[128];
+// HW supports max of 8 endpoints, but this can be reduced to save RAM
+#define MAX_EP_COUNT 8
 
 // If sharing with CAN, one can set this to be non-zero to give CAN space where it wants it
 // Both of these MUST be a multiple of 2, and are in byte units.
 #define BTABLE_BASE 0u
 #define BTABLE_LENGTH (PMA_LENGTH)
 
+// Max size of a USB FS packet is 64...
+#define MAX_PACKET_SIZE 64
+
+// One of these for every EP IN & OUT, uses a bit of RAM....
 typedef struct {
   uint8_t * buffer;
   uint16_t total_len;
@@ -95,7 +115,7 @@ typedef struct {
   bool need_zero_len_tx;
 } xfer_ctl_t;
 
-static xfer_ctl_t  xfer_status[MAX_EP][2];
+static xfer_ctl_t  xfer_status[MAX_EP_COUNT][2];
 #define XFER_CTL_BASE(_epnum, _dir) &xfer_status[_epnum][_dir]
 
 static TU_ATTR_ALIGNED(4) uint32_t _setup_packet[6];
@@ -172,10 +192,11 @@ void dcd_int_disable(uint8_t rhport)
 // Receive Set Address request, mcu port must also include status IN response
 void dcd_set_address(uint8_t rhport, uint8_t dev_addr)
 {
+  // We cannot immediatly change it; it must be queued to change after the STATUS packet is sent.
+  // (CTR handler will actually change the address once it sees that the transmission is complete)
   newDADDR = dev_addr;
 
   // Respond with status
-  //(CTR handler will actually change the address once it sees that the transmission is complete)
   dcd_edpt_xfer(rhport, tu_edpt_addr(0, TUSB_DIR_IN), NULL, 0);
 
 }
@@ -183,7 +204,7 @@ void dcd_set_address(uint8_t rhport, uint8_t dev_addr)
 // Receive Set Config request
 void dcd_set_config (uint8_t rhport, uint8_t config_num)
 {
-
+  // Nothing to do? Handled by stack.
 }
 
 void dcd_remote_wakeup(uint8_t rhport)
@@ -221,16 +242,16 @@ static void dcd_handle_bus_reset() {
     EPREG(0) = 0u;
   }
 
-  ep_buf_ptr = 8*MAX_EP; // 8 bytes per endpoint (two TX and two RX words, each)
+  ep_buf_ptr = 8*MAX_EP_COUNT; // 8 bytes per endpoint (two TX and two RX words, each)
   dcd_edpt_open (0, &ep0OUT_desc);
   dcd_edpt_open (0, &ep0IN_desc);
   newDADDR = 0;
   USB->DADDR = USB_DADDR_EF; // Set enable flag, and leaving the device address as zero.
 }
 
-static void dcd_ep_ctr_handler()
+// FIXME: Defined to return uint16 so that ASSERT can be used, even though a return value is not needed.
+static uint16_t dcd_ep_ctr_handler()
 {
-  //PCD_EPTypeDef *ep;
   uint16_t count=0U;
   uint8_t EPindex;
   __IO uint16_t wIstr;
@@ -277,7 +298,7 @@ static void dcd_ep_ctr_handler()
         /* DIR = 1 & CTR_RX       => SETUP or OUT int */
         /* DIR = 1 & (CTR_TX | CTR_RX) => 2 int pending */
 
-        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
+        xfer_ctl_t *xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
 
         //ep = &hpcd->OUT_ep[0];
         wEPVal = PCD_GET_ENDPOINT(USB, EPindex);
@@ -316,7 +337,7 @@ static void dcd_ep_ctr_handler()
           }
           dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
 
-          PCD_SET_EP_RX_CNT(USB, EPindex, 64);
+          PCD_SET_EP_RX_CNT(USB, EPindex, CFG_TUD_ENDPOINT0_SIZE);
           if(EPindex == 0 && xfer->total_len == 0)
           {
             PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_RX_VALID);// Await next SETUP
@@ -391,6 +412,7 @@ static void dcd_ep_ctr_handler()
       }
     }
   }
+  return 0;
 }
 
 void dcd_fs_irqHandler(void) {
@@ -416,8 +438,6 @@ void dcd_fs_irqHandler(void) {
 
     //USB->CNTR &= (uint16_t)(~(USB_CNTR_LPMODE));
     USB->CNTR &= ~USB_CNTR_FSUSP;
-
-
     USB->ISTR &= ~USB_ISTR_WKUP;
   }
 
@@ -429,7 +449,6 @@ void dcd_fs_irqHandler(void) {
 
     /* clear of the ISTR bit must be done after setting of CNTR_FSUSP */
     USB->ISTR &= ~USB_ISTR_SUSP;
-
   }
 
   if(int_status & USB_ISTR_SOF) {
@@ -473,7 +492,6 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
 
   PCD_SET_EP_ADDRESS(USB, epnum, epnum);
   PCD_CLEAR_EP_KIND(USB,0); // Be normal, for now.
-
 
   if(dir == TUSB_DIR_IN) {
     *PCD_EP_TX_ADDRESS(USB, epnum) = ep_buf_ptr;
