@@ -268,7 +268,6 @@ static void dcd_ep_ctr_handler()
           }
           dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
 
-
           PCD_SET_EP_RX_CNT(USB, EPindex, 64);
           if(EPindex == 0 && xfer->total_len == 0)
           {
@@ -279,99 +278,70 @@ static void dcd_ep_ctr_handler()
 
       }
     }
-   /* else
+    else
     {
 
-      /* Decode and service non control endpoints interrupt  * /
+      /* Decode and service non control endpoints interrupt  */
 
-      /* process related endpoint register * /
-      wEPVal = PCD_GET_ENDPOINT(hpcd->Instance, EPindex);
-      if ((wEPVal & USB_EP_CTR_RX) != 0U)
+      /* process related endpoint register */
+      wEPVal = PCD_GET_ENDPOINT(USB, EPindex);
+      if ((wEPVal & USB_EP_CTR_RX) != 0U) // OUT
       {
-        /* clear int flag * /
-        PCD_CLEAR_RX_EP_CTR(hpcd->Instance, EPindex);
-        ep = &hpcd->OUT_ep[EPindex];
+        /* clear int flag */
+        PCD_CLEAR_RX_EP_CTR(USB, EPindex);
 
-        /* OUT double Buffering* /
-        if (ep->doublebuffer == 0U)
+        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
+
+        //ep = &hpcd->OUT_ep[EPindex];
+
+        count = PCD_GET_EP_RX_CNT(USB, EPindex);
+        if (count != 0U)
         {
-          count = PCD_GET_EP_RX_CNT(hpcd->Instance, ep->num);
-          if (count != 0U)
-          {
-            PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaadress, count);
-          }
+          dcd_read_packet_memory(&(xfer->buffer[xfer->queued_len]),
+              *PCD_EP_RX_ADDRESS(USB,EPindex), count);
+        }
+
+        /*multi-packet on the NON control OUT endpoint */
+        xfer->queued_len += count;
+
+        if ((count == 0U) || (count < 64))
+        {
+          /* RX COMPLETE */
+          dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
         }
         else
         {
-
-          if ((PCD_GET_ENDPOINT(hpcd->Instance, ep->num)& USB_EP_DTOG_RX) == USB_EP_DTOG_RX)
-          {
-            /*read from endpoint BUF0Addr buffer* /
-            count = PCD_GET_EP_DBUF0_CNT(hpcd->Instance, ep->num);
-            if (count != 0U)
-            {
-              PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaaddr0, count);
-            }
-          }
-          else
-          {
-            /*read from endpoint BUF1Addr buffer* /
-            count = PCD_GET_EP_DBUF1_CNT(hpcd->Instance, ep->num);
-            if (count != 0U)
-            {
-              PCD_ReadPMA(hpcd->Instance, ep->xfer_buff, ep->pmaaddr1, count);
-            }
-          }
-          PCD_FreeUserBuffer(hpcd->Instance, ep->num, PCD_EP_DBUF_OUT)
-        }
-        /*multi-packet on the NON control OUT endpoint* /
-        ep->xfer_count+=count;
-        ep->xfer_buff+=count;
-
-        if ((ep->xfer_len == 0U) || (count < ep->maxpacket))
-        {
-          /* RX COMPLETE * /
-          HAL_PCD_DataOutStageCallback(hpcd, ep->num);
-        }
-        else
-        {
-          HAL_PCD_EP_Receive(hpcd, ep->num, ep->xfer_buff, ep->xfer_len);
+          PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_RX_VALID);
         }
 
-      } /* if((wEPVal & EP_CTR_RX) * /
+      } /* if((wEPVal & EP_CTR_RX) */
 
-      if ((wEPVal & USB_EP_CTR_TX) != 0U)
+      if ((wEPVal & USB_EP_CTR_TX) != 0U) // IN
       {
-        ep = &hpcd->IN_ep[EPindex];
+        /* clear int flag */
+        PCD_CLEAR_TX_EP_CTR(USB, EPindex);
 
-        /* clear int flag * /
-        PCD_CLEAR_TX_EP_CTR(hpcd->Instance, EPindex);
+        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
 
-        /* IN double Buffering* /
-        if (ep->doublebuffer == 0U)
+        /* IN  */
+        count = PCD_GET_EP_TX_CNT(USB, EPindex);
+        if (count != 0)
         {
-          ep->xfer_count = PCD_GET_EP_TX_CNT(hpcd->Instance, ep->num);
-          if (ep->xfer_count != 0)
-          {
-            PCD_WritePMA(hpcd->Instance, ep->xfer_buff, ep->pmaadress, ep->xfer_count);
-          }
+          dcd_transmit_packet(xfer, EPindex);
         }
-        /*multi-packet on the NON control IN endpoint* /
-        ep->xfer_count = PCD_GET_EP_TX_CNT(hpcd->Instance, ep->num);
-        ep->xfer_buff+=ep->xfer_count;
 
-        /* Zero Length Packet? * /
-        if (ep->xfer_len == 0U)
+        /* Zero Length Packet? */
+        if (count == 0U)
         {
-          /* TX COMPLETE * /
-          HAL_PCD_DataInStageCallback(hpcd, ep->num);
+          /* TX COMPLETE */
+          dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
         }
         else
         {
-          HAL_PCD_EP_Transmit(hpcd, ep->num, ep->xfer_buff, ep->xfer_len);
+          PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_TX_VALID);
         }
       }
-    }*/
+    }
   }
 }
 
