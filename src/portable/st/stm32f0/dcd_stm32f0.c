@@ -50,9 +50,12 @@
  * Current driver limitations (i.e., a list of features for you to add):
  * - STALL not handled
  * - Only tested on F070RB; other models will have an #error during compilation
+ * - All EP BTABLE buffers are created as max 64 bytes.
+ *   - Smaller can be requested, but it has to be an even number.
  * - No isochronous endpoints
  * - Endpoint index is the ID of the endpoint
  *   - This means that priority is given to endpoints with lower ID numbers
+ *   - Code is mixing up EP IX with EP ID. Everywhere.
  * - No way to close endpoints; Can a device be reconfigured without a reset?
  * - Packet buffer memory is copied in the interrupt.
  *   - This is better for performance, but means interrupts are disabled for longer
@@ -247,6 +250,7 @@ static void dcd_handle_bus_reset() {
   dcd_edpt_open (0, &ep0IN_desc);
   newDADDR = 0;
   USB->DADDR = USB_DADDR_EF; // Set enable flag, and leaving the device address as zero.
+  PCD_SET_EP_RX_STATUS(USB, 0, USB_EP_RX_VALID); // And start accepting SETUP on EP0
 }
 
 // FIXME: Defined to return uint16 so that ASSERT can be used, even though a return value is not needed.
@@ -347,10 +351,8 @@ static uint16_t dcd_ep_ctr_handler()
 
       }
     }
-    else
+    else /* Decode and service non control endpoints interrupt  */
     {
-
-      /* Decode and service non control endpoints interrupt  */
 
       /* process related endpoint register */
       wEPVal = PCD_GET_ENDPOINT(USB, EPindex);
@@ -376,8 +378,8 @@ static uint16_t dcd_ep_ctr_handler()
         if ((count == 0U) || (count < 64))
         {
           /* RX COMPLETE */
-          dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
         }
+          dcd_event_xfer_complete(0, EPindex, xfer->queued_len, XFER_RESULT_SUCCESS, true);
         else
         {
           PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_RX_VALID);
@@ -470,10 +472,11 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   uint8_t const epnum = tu_edpt_number(p_endpoint_desc->bEndpointAddress);
   uint8_t const dir   = tu_edpt_dir(p_endpoint_desc->bEndpointAddress);
 
-  // Unsupported endpoint numbers/size.
-  if((p_endpoint_desc->wMaxPacketSize.size > 64) || (epnum >= 8)) {
-    return false;
-  }
+  // Isochronous not supported (yet), and some other driver assumptions.
+  TU_ASSERT(p_endpoint_desc->bDescriptorType != TUSB_XFER_ISOCHRONOUS);
+  TU_ASSERT(p_endpoint_desc->wMaxPacketSize.size <= MAX_PACKET_SIZE);
+  TU_ASSERT(epnum < MAX_EP_COUNT);
+  TU_ASSERT((p_endpoint_desc->wMaxPacketSize.size %2) == 0);
 
  // __IO uint16_t * const epreg = &(EPREG(epnum));
 
@@ -491,7 +494,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   }
 
   PCD_SET_EP_ADDRESS(USB, epnum, epnum);
-  PCD_CLEAR_EP_KIND(USB,0); // Be normal, for now.
+  PCD_CLEAR_EP_KIND(USB,0); // Be normal, for now, instead of only accepting zero-byte packets
 
   if(dir == TUSB_DIR_IN) {
     *PCD_EP_TX_ADDRESS(USB, epnum) = ep_buf_ptr;
@@ -502,7 +505,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
     *PCD_EP_RX_ADDRESS(USB, epnum) = ep_buf_ptr;
     PCD_SET_EP_RX_CNT(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
     PCD_CLEAR_RX_DTOG(USB, epnum);
-    PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_VALID);
+    PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_NAK);
   }
 
   ep_buf_ptr += p_endpoint_desc->wMaxPacketSize.size; // increment buffer pointer
@@ -554,7 +557,7 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
     PCD_SET_EP_RX_CNT(USB,epnum,total_bytes);
     PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_VALID);
   }
-  else
+  else // IN
   {
     dcd_transmit_packet(xfer,epnum);
   }
