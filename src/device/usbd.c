@@ -370,8 +370,9 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
         return false;
       }
 
-      sprintf(msg,"ProcessCtrlReq Req=0x%hx len=0x%hx\n",
+      sprintf(msg,"ProcessCtrlReq Req=0x%hx ReqTyp=0x%hx len=0x%hx\n",
           (uint16_t) p_request->bRequest,
+          (uint16_t)p_request->bmRequestType,
           (uint16_t) p_request->wLength);
       uart_tx_sync(msg,strlen(msg));
 
