@@ -24,10 +24,48 @@
  * This file is part of the TinyUSB stack.
  */
 
-// TODO: Implement double-buffering
-// TODO: Priority is currently based on the EP#. Make it configurable.
-// TODO: Packet sizes must be even. Verify it when opening endpoint?
-// TODO: STM32F0 uses special buffer memory. Currently memcpy performed, instead of having the class directly write to buffer.
+/**********************************************
+ * This driver should work with minimal for the ST Micro "USB A" peripheral. This
+ *  covers:
+ *
+ * F04x, F072, F078, 070x6/B      1024 byte buffer
+ * F102, F103                      512 byte buffer; no internal D+ pull-up
+ * F302xB/C, F303xB/C, F373        512 byte buffer; no internal D+ pull-up
+ * F302x6/8, F302xD/E2, F303xD/E  1024 byte buffer; no internal D+ pull-up
+ * L0x2, L0x3                     1024 byte buffer
+ * L1                              512 byte buffer
+ * 2L4x2, 2L4x3                   1024 byte buffer
+ *
+ * Assumptions of the driver:
+ * - You are not using CAN (it must share the packet buffer)
+ * - APB clock must be >=10 MHz
+ * - USB clock enabled before usb_init() is called; Use __HAL_RCC_USB_CLK_ENABLE();
+ * - On some boards, series resistors are required, but not on others
+ * - You don't have long-running interrupts; some USB packets must be quickly responded to.
+ *
+ * Current driver limitations (i.e., a list of features for you to add):
+ * - Only tested on F070RB; other models will have an #error during compilation
+ * - Endpoint index is the ID of the endpoint
+ *   - This means that priority is given to endpoints with lower ID numbers
+ * - No double-buffering
+ * - No isochronous endpoints
+ * - No DMA
+ * - Minimal error handling
+ *   - Perhaps error interrupts sholud be reported to the stack, or cause a device reset?
+ * - Packet buffer memory is copied in the interrupt.
+ *   - This is better for performance, but means interrupts are disabled for longer
+ *   - DMA may be the best choice, but it could also be pushed to the USBD task.
+ * - No provision to control the D+ pull-up using GPIO on devices without an internal pull-up.
+ *
+ * USB documentation and  Reference implementations
+ * - STM32 Reference manuals
+ * - STM32 USB Hardware Guidelines AN4879
+ *
+ * - STM32 HAL (much of this driver is based on it)
+ * - libopencm3/lib/stm32/common/st_usbfs_core.c
+ *
+ * - YouTube OpenTechLab 011; https://www.youtube.com/watch?v=4FOkJLp_PUw
+ */
 
 #include "tusb_option.h"
 
@@ -42,17 +80,13 @@
 
 char msg[150];
 
-#define USB_ISTR_ALL_EVENTS (USB_ISTR_PMAOVR | USB_ISTR_ERR | USB_ISTR_WKUP | USB_ISTR_SUSP | \
-     USB_ISTR_RESET | USB_ISTR_SOF | USB_ISTR_ESOF | USB_ISTR_L1REQ )
-
-#define EPREG(n) (((__IO uint16_t*)USB_BASE)[n*2])
-
 // HW supports max of 8 endpoints, but this can be reduced to save RAM.
 #define MAX_EP 8
 
-
-// WARNING: APB clock must be >=10 MHz
-
+// If sharing with CAN, one can set this to be non-zero to give CAN space where it wants it
+// Both of these MUST be a multiple of 2, and are in byte units.
+#define BTABLE_BASE 0u
+#define BTABLE_LENGTH (PMA_LENGTH)
 
 typedef struct {
   uint8_t * buffer;
@@ -82,8 +116,6 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix);
 
 void dcd_init (uint8_t rhport)
 {
-  strcpy(msg,"\n\n\n\n\ndcd_init\n");
-  uart_tx_sync(msg,strlen(msg));
   /* Clocks should already be enabled */
   /* Use __HAL_RCC_USB_CLK_ENABLE(); to enable the clocks before calling this function */
 
@@ -95,6 +127,9 @@ void dcd_init (uint8_t rhport)
   }
 	// Perform USB peripheral reset
   USB->CNTR = USB_CNTR_FRES | USB_CNTR_PDWN;
+  for(uint32_t i = 0; i<200; i++) { // should be a few us
+    asm("NOP");
+  }
   USB->CNTR &= ~(USB_CNTR_PDWN);// Remove powerdown
   // Wait startup time, for F042 and F070, this is <= 1 us.
   for(uint32_t i = 0; i<200; i++) { // should be a few us
@@ -102,7 +137,7 @@ void dcd_init (uint8_t rhport)
   }
   USB->CNTR = 0; // Enable USB
 
-  USB->BTABLE = 0; // Remind it that BTABLE should start at offset 0 (which it should anyway after reset)
+  USB->BTABLE = BTABLE_BASE;
 
   USB->ISTR &= ~(USB_ISTR_ALL_EVENTS); // Clear pending interrupts
 
@@ -112,10 +147,10 @@ void dcd_init (uint8_t rhport)
   }
   // Need to initialize the BTABLE for EP0 at this point (though setting up the EP0R is unneeded)
   //dcd_handle_bus_reset();
-  for(int i=0;i<512; i++)
-    ((uint16_t*)USB_PMAADDR)[i] = 0;
-  USB->CNTR |= USB_CNTR_RESETM | USB_CNTR_SOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM |
-      USB_CNTR_ESOFM | USB_CNTR_ERRM;
+  for(int i=0;i<(PMA_LENGTH>>1); i++)
+    ((uint16_t*)USB_PMAADDR)[BTABLE_BASE + i] = 0u;
+
+  USB->CNTR |= USB_CNTR_RESETM | USB_CNTR_SOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
   dcd_handle_bus_reset();
   // And finally enable pull-up, which may trigger the RESET IRQ if the host is connected.
   USB->BCDR |= USB_BCDR_DPPU;
@@ -124,7 +159,6 @@ void dcd_init (uint8_t rhport)
 // Enable device interrupt
 void dcd_int_enable (uint8_t rhport)
 {
-
   NVIC_SetPriority(USB_IRQn, 0);
   NVIC_EnableIRQ(USB_IRQn);
 }
@@ -132,7 +166,6 @@ void dcd_int_enable (uint8_t rhport)
 // Disable device interrupt
 void dcd_int_disable(uint8_t rhport)
 {
-
   NVIC_DisableIRQ(USB_IRQn);
 }
 
@@ -159,6 +192,12 @@ void dcd_remote_wakeup(uint8_t rhport)
   (void) rhport;
 }
 
+// I'm getting a weird warning about missing braces here that I don't
+// know how to fix.
+#if defined(__GNUC__) && (__GNUC__ >= 7)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wmissing-braces"
+#endif
 static const tusb_desc_endpoint_t ep0OUT_desc = {
     .wMaxPacketSize = CFG_TUD_ENDPOINT0_SIZE,
     .bDescriptorType = TUSB_XFER_CONTROL,
@@ -171,9 +210,11 @@ static const tusb_desc_endpoint_t ep0IN_desc = {
     .bEndpointAddress = 0x80
 };
 
+#pragma GCC diagnostic pop
+
 static void dcd_handle_bus_reset() {
   //__IO uint16_t * const epreg = &(EPREG(0));
-  ep_buf_ptr = 1024;
+  ep_buf_ptr = PMA_LENGTH;
   dcd_edpt_open (0, &ep0OUT_desc);
   dcd_edpt_open (0, &ep0IN_desc);
   newDADDR = 0;
@@ -388,16 +429,6 @@ void dcd_fs_irqHandler(void) {
     USB->ISTR &= ~USB_ISTR_SOF;
     dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
   }
-
-  if(int_status & USB_ISTR_ESOF) {
-    USB->ISTR &= ~USB_ISTR_ESOF;
-  }
-
-
-  if(int_status & USB_ISTR_ERR) {
-    USB->ISTR &= ~USB_ISTR_ERR;
-  }
-
 }
 
 //--------------------------------------------------------------------+

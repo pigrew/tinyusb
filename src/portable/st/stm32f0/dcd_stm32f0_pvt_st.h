@@ -214,4 +214,19 @@
 #define PCD_CLEAR_EP_KIND(USBx, bEpNum)  (PCD_SET_ENDPOINT((USBx), (bEpNum), \
                                 (USB_EP_CTR_RX|USB_EP_CTR_TX|((((uint32_t)(PCD_GET_ENDPOINT((USBx), (bEpNum)))) & USB_EPKIND_MASK)))))
 
+
+#define EPREG(n) (((__IO uint16_t*)USB_BASE)[n*2])
+
+#define USB_ISTR_ALL_EVENTS (USB_ISTR_PMAOVR | USB_ISTR_ERR | USB_ISTR_WKUP | USB_ISTR_SUSP | \
+     USB_ISTR_RESET | USB_ISTR_SOF | USB_ISTR_ESOF | USB_ISTR_L1REQ )
+
+
+// PMA_LENGTH is PMA buffer size in bytes.
+
+#if defined(STM32F070xB) | defined(STM32F070x6)
+#define PMA_LENGTH 1024
+#else
+#error You are using an untested or unimplemented STM32 variant
+#endif
+
 #endif /* PORTABLE_ST_STM32F0_DCD_STM32F0_PVT_ST_H_ */
