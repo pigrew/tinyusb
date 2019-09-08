@@ -141,12 +141,12 @@ void dcd_init (uint8_t rhport)
 
   USB->ISTR &= ~(USB_ISTR_ALL_EVENTS); // Clear pending interrupts
 
-  // Clear all EP
+  // Clear all EPREG
   for(int i=0; i<8; i++) {
     EPREG(0) = 0u;
   }
+
   // Need to initialize the BTABLE for EP0 at this point (though setting up the EP0R is unneeded)
-  //dcd_handle_bus_reset();
   for(int i=0;i<(PMA_LENGTH>>1); i++)
     ((uint16_t*)USB_PMAADDR)[BTABLE_BASE + i] = 0u;
 
@@ -214,11 +214,18 @@ static const tusb_desc_endpoint_t ep0IN_desc = {
 
 static void dcd_handle_bus_reset() {
   //__IO uint16_t * const epreg = &(EPREG(0));
-  ep_buf_ptr = PMA_LENGTH;
+  USB->DADDR = 0u; // disable USB peripheral by clearing the EF flag
+
+  // Clear all EPREG (or maybe this is automatic? I'm not sure)
+  for(int i=0; i<8; i++) {
+    EPREG(0) = 0u;
+  }
+
+  ep_buf_ptr = 8*MAX_EP; // 8 bytes per endpoint (two TX and two RX words, each)
   dcd_edpt_open (0, &ep0OUT_desc);
   dcd_edpt_open (0, &ep0IN_desc);
   newDADDR = 0;
-  USB->DADDR = USB_DADDR_EF; // Set enable flag, and clear DADDR
+  USB->DADDR = USB_DADDR_EF; // Set enable flag, and leaving the device address as zero.
 }
 
 static void dcd_ep_ctr_handler()
@@ -467,7 +474,6 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   PCD_SET_EP_ADDRESS(USB, epnum, epnum);
   PCD_CLEAR_EP_KIND(USB,0); // Be normal, for now.
 
-  ep_buf_ptr -= p_endpoint_desc->wMaxPacketSize.size; // decrement buffer pointer
 
   if(dir == TUSB_DIR_IN) {
     *PCD_EP_TX_ADDRESS(USB, epnum) = ep_buf_ptr;
@@ -480,6 +486,8 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
     PCD_CLEAR_RX_DTOG(USB, epnum);
     PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_VALID);
   }
+
+  ep_buf_ptr += p_endpoint_desc->wMaxPacketSize.size; // increment buffer pointer
 
   return true;
 }
