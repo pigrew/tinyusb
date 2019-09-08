@@ -587,7 +587,9 @@ static void dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   uint32_t i;
   uint16_t temp1, temp2;
   const uint8_t * srcVal;
-  uint16_t *pdwVal;
+  // The GCC optimizer will combine access to 32-bit sizes if we let it. Force
+  // it volatile so that it won't do that.
+  __IO uint16_t *pdwVal;
 
   srcVal = src;
   pdwVal = (uint16_t*)( ((uint8_t*)USB) + 0x400U + dst );
@@ -612,7 +614,9 @@ static void dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
 {
   uint32_t n = (uint32_t)wNBytes >> 1U;
   uint32_t i;
-  const uint16_t *pdwVal;
+  // The GCC optimizer will combine access to 32-bit sizes if we let it. Force
+  // it volatile so that it won't do that.
+  __IO const uint16_t *pdwVal;
   uint32_t temp;
 
   pdwVal = (uint16_t*)( ((uint8_t*)USB) + 0x400U + src );
