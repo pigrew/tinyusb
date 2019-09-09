@@ -69,12 +69,13 @@
  *   - Perhaps error interrupts sholud be reported to the stack, or cause a device reset?
  * - Assumes a single USB peripheral; I think that no hardware has multiple so this is fine.
  *
- * USB documentation and  Reference implementations
+ * USB documentation and Reference implementations
  * - STM32 Reference manuals
  * - STM32 USB Hardware Guidelines AN4879
  *
- * - STM32 HAL (much of this driver is based on it)
+ * - STM32 HAL (much of this driver is based on this)
  * - libopencm3/lib/stm32/common/st_usbfs_core.c
+ * - Keil USB Device http://www.keil.com/pack/doc/mw/USB/html/group__usbd.html
  *
  * - YouTube OpenTechLab 011; https://www.youtube.com/watch?v=4FOkJLp_PUw
  *
