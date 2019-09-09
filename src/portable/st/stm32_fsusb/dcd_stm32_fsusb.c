@@ -42,9 +42,10 @@
  *
  * Assumptions of the driver:
  * - You are not using CAN (it must share the packet buffer)
- * - APB clock must be >=10 MHz
+ * - APB clock is >= 10 MHz
  * - USB clock enabled before usb_init() is called; Perhaps use __HAL_RCC_USB_CLK_ENABLE();
- * - On some boards, series resistors are required, but not on others
+ * - On some boards, series resistors are required, but not on others.
+ * - On some boards, D+ pull up resistor (1.5kohm) is required, but not on others.
  * - You don't have long-running interrupts; some USB packets must be quickly responded to.
  * - You have the ST CMSIS library linked into the project. HAL is not used.
  *
@@ -175,7 +176,10 @@ void dcd_init (uint8_t rhport)
   USB->CNTR |= USB_CNTR_RESETM | USB_CNTR_SOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
   dcd_handle_bus_reset();
   // And finally enable pull-up, which may trigger the RESET IRQ if the host is connected.
+  // (if this MCU has an internal pullup)
+#if defined(USB_BCDR_DPPU)
   USB->BCDR |= USB_BCDR_DPPU;
+#endif
 }
 
 // Enable device interrupt
@@ -434,7 +438,7 @@ void dcd_fs_irqHandler(void) {
   if (int_status & USB_ISTR_WKUP)
   {
 
-    //USB->CNTR &= (uint16_t)(~(USB_CNTR_LPMODE));
+    USB->CNTR &= ~USB_CNTR_LPMODE;
     USB->CNTR &= ~USB_CNTR_FSUSP;
     USB->ISTR &= ~USB_ISTR_WKUP;
   }
@@ -443,7 +447,7 @@ void dcd_fs_irqHandler(void) {
   {
     /* Force low-power mode in the macrocell */
     USB->CNTR |= USB_CNTR_FSUSP;
-    //USB->CNTR |= USB_CNTR_LPMODE;
+    USB->CNTR |= USB_CNTR_LPMODE;
 
     /* clear of the ISTR bit must be done after setting of CNTR_FSUSP */
     USB->ISTR &= ~USB_ISTR_SUSP;
@@ -560,11 +564,40 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
 
 void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
 {
+  (void)rhport;
 
+  if (ep_addr == 0) { // CTRL EP0 (OUT for setup)
+    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_STALL);
+  }
+
+  if (ep_addr & 0x80) { // IN
+    ep_addr &= 0x7F;
+    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_STALL);
+  } else { // OUT
+    PCD_SET_EP_RX_STATUS(USB,ep_addr, USB_EP_RX_STALL);
+  }
 }
 
 void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr)
 {
+  (void)rhport;
+  if (ep_addr == 0) {
+    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_NAK);
+  }
+
+  if (ep_addr & 0x80) { // IN
+    ep_addr &= 0x7F;
+
+    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_NAK);
+
+    /* Reset to DATA0 if clearing stall condition. */
+    PCD_CLEAR_TX_DTOG(USB,ep_addr);
+  } else { // OUT
+    /* Reset to DATA0 if clearing stall condition. */
+    PCD_CLEAR_RX_DTOG(USB,ep_addr);
+
+    PCD_SET_EP_RX_STATUS(USB,ep_addr, USB_EP_RX_VALID);
+  }
 }
 
 // Packet buffer access can only be 8- or 16-bit.
