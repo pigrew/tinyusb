@@ -35,8 +35,8 @@
 // This file contains source copied from ST's HAL, and thus should have their copyright statement.
 
 
-#ifndef PORTABLE_ST_STM32F0_DCD_STM32F0_FSUSB_PVT_ST_H_
-#define PORTABLE_ST_STM32F0_DCD_STM32F0_FSUSB_PVT_ST_H_
+#ifndef PORTABLE_ST_STM32F0_DCD_STM32F0_FSDEV_PVT_ST_H_
+#define PORTABLE_ST_STM32F0_DCD_STM32F0_FSDEV_PVT_ST_H_
 
 /* SetENDPOINT */
 #define PCD_SET_ENDPOINT(USBx, bEpNum,wRegValue)  (*((__IO uint16_t *)(((uint32_t)(&(USBx)->EP0R + (bEpNum) * 2U))))= (uint16_t)(wRegValue))
@@ -229,4 +229,4 @@
 #error You are using an untested or unimplemented STM32 variant
 #endif
 
-#endif /* PORTABLE_ST_STM32F0_DCD_STM32F0_FSUSB_PVT_ST_H_ */
+#endif /* PORTABLE_ST_STM32F0_DCD_STM32F0_FSDEV_PVT_ST_H_ */

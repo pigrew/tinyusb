@@ -92,7 +92,7 @@
 
 #include "tusb_option.h"
 
-#if TUSB_OPT_DEVICE_ENABLED && CFG_TUSB_MCU == OPT_MCU_STM32_FSUSB
+#if TUSB_OPT_DEVICE_ENABLED && CFG_TUSB_MCU == OPT_MCU_STM32_FSDEV
 
 // In order to reduce the dependance on HAL, we undefine this.
 // Some definitions are copied to our private include file.
@@ -100,7 +100,7 @@
 
 #include "device/dcd.h"
 #include "stm32f0xx.h"
-#include "portable/st/stm32_fsusb/dcd_stm32_fsusb_pvt_st.h"
+#include "portable/st/stm32_fsdev/dcd_stm32_fsdev_pvt_st.h"
 #include "uart_util.h"
 
 
