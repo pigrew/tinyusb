@@ -99,7 +99,6 @@
 #include "portable/st/stm32_fsusb/dcd_stm32_fsusb_pvt_st.h"
 #include "uart_util.h"
 
-char msg[128];
 // HW supports max of 8 endpoints, but this can be reduced to save RAM
 #define MAX_EP_COUNT 8
 
@@ -400,24 +399,13 @@ static uint16_t dcd_ep_ctr_handler()
         /* clear int flag */
         PCD_CLEAR_TX_EP_CTR(USB, EPindex);
 
-        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
+        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
 
-        /* IN  */
-        count = PCD_GET_EP_TX_CNT(USB, EPindex);
-        if (count != 0)
+        if (xfer->queued_len  != xfer->total_len) // data remaining in transfer?
         {
           dcd_transmit_packet(xfer, EPindex);
-        }
-
-        /* Zero Length Packet? */
-        if (count == 0U)
-        {
-          /* TX COMPLETE */
-          dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
-        }
-        else
-        {
-          PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_TX_VALID);
+        } else {
+          dcd_event_xfer_complete(0, 0x80 + EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
         }
       }
     }
