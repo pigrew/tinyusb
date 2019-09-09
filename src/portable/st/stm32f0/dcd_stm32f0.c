@@ -43,11 +43,14 @@
  * Assumptions of the driver:
  * - You are not using CAN (it must share the packet buffer)
  * - APB clock must be >=10 MHz
- * - USB clock enabled before usb_init() is called; Use __HAL_RCC_USB_CLK_ENABLE();
+ * - USB clock enabled before usb_init() is called; Perhaps use __HAL_RCC_USB_CLK_ENABLE();
  * - On some boards, series resistors are required, but not on others
  * - You don't have long-running interrupts; some USB packets must be quickly responded to.
+ * - You have the ST CMSIS library linked into the project. HAL is not used.
  *
  * Current driver limitations (i.e., a list of features for you to add):
+ * - Driver never sends zero-byte non-EP0 packets.
+ *   - I think this is correct, and should be handled by the class driver?
  * - STALL not handled
  * - Only tested on F070RB; other models will have an #error during compilation
  * - All EP BTABLE buffers are created as max 64 bytes.
@@ -375,11 +378,13 @@ static uint16_t dcd_ep_ctr_handler()
         /*multi-packet on the NON control OUT endpoint */
         xfer->queued_len += count;
 
-        if ((count == 0U) || (count < 64))
+        if ((count < 64) || (xfer->queued_len == xfer->total_len))
         {
           /* RX COMPLETE */
-        }
           dcd_event_xfer_complete(0, EPindex, xfer->queued_len, XFER_RESULT_SUCCESS, true);
+          // Though the host could still send, we don't know.
+          // Does the bulk pipe need to be reset to valid to allow for a ZLP?
+        }
         else
         {
           PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_RX_VALID);
@@ -547,7 +552,8 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
 
   if ( dir == TUSB_DIR_OUT )
   {
-
+    // Weird edge cases can happen if one accepts multi-packet transfers which are not multiples of 64
+    TU_ASSERT((total_bytes <64) || (total_bytes % 64 == 0));
     // A setup token can occur immediately after an OUT STATUS packet so make sure we have a valid
     // buffer for the control endpoint.
     if (epnum == 0 && buffer == NULL) {
@@ -595,7 +601,7 @@ static void dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   __IO uint16_t *pdwVal;
 
   srcVal = src;
-  pdwVal = (uint16_t*)( ((uint8_t*)USB) + 0x400U + dst );
+  pdwVal = (__IO uint16_t*)( ((uint8_t*)USB) + 0x400U + dst );
 
   for (i = n; i != 0; i--)
   {
@@ -622,7 +628,7 @@ static void dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
   __IO const uint16_t *pdwVal;
   uint32_t temp;
 
-  pdwVal = (uint16_t*)( ((uint8_t*)USB) + 0x400U + src );
+  pdwVal = (__IO uint16_t*)( ((uint8_t*)USB) + 0x400U + src );
   uint8_t *dstVal = (uint8_t*)dst;
 
   for (i = n; i != 0U; i--)
