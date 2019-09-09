@@ -73,7 +73,7 @@
   * @retval None
   */
 #define PCD_CALC_BLK32(dwReg,wCount,wNBlocks) {\
-    (wNBlocks) = (wCount) >> 5U;\
+    (wNBlocks) = (uint32_t)((wCount) >> 5U);\
     if(((wCount) & 0x1fU) == 0U)\
     {                                                  \
       (wNBlocks)--;\
@@ -83,7 +83,7 @@
 
 
 #define PCD_CALC_BLK2(dwReg,wCount,wNBlocks) {\
-    (wNBlocks) = (wCount) >> 1U;\
+    (wNBlocks) = (uint32_t)((wCount) >> 1U); \
     if(((wCount) & 0x1U) != 0U)\
     {                                                  \
       (wNBlocks)++;\
@@ -93,7 +93,7 @@
 
 
 #define PCD_SET_EP_CNT_RX_REG(dwReg,wCount)  {\
-    uint16_t wNBlocks;\
+    uint32_t wNBlocks;\
     if((wCount) > 62U)                                \
     {                                                \
       PCD_CALC_BLK32((dwReg),(wCount),wNBlocks)     \
@@ -117,15 +117,15 @@
     USB_EP_CTR_RX|USB_EP_CTR_TX|(((uint32_t)(PCD_GET_ENDPOINT((USBx), (bEpNum)))) & USB_EPREG_MASK) | (bAddr))
 
 
-#define PCD_EP_TX_ADDRESS(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8)+     ((uint32_t)(USBx) + 0x400U)))))
-#define PCD_EP_TX_CNT(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+2)+  ((uint32_t)(USBx) + 0x400U)))))
+#define PCD_EP_TX_ADDRESS(USBx, bEpNum) ((__IO uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8u)+     ((uint32_t)(USBx) + 0x400U)))))
+#define PCD_EP_TX_CNT(USBx, bEpNum) ((__IO uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8u+2u)+  ((uint32_t)(USBx) + 0x400U)))))
 
-#define PCD_EP_RX_ADDRESS(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+4)+ ((uint32_t)(USBx) + 0x400U)))))
-#define PCD_EP_RX_CNT(USBx, bEpNum) ((uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8+6)+  ((uint32_t)(USBx) + 0x400U)))))
+#define PCD_EP_RX_ADDRESS(USBx, bEpNum) ((__IO uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8u+4u)+ ((uint32_t)(USBx) + 0x400U)))))
+#define PCD_EP_RX_CNT(USBx, bEpNum) ((__IO uint16_t *)((uint32_t)((((USBx)->BTABLE+(bEpNum)*8u+6u)+  ((uint32_t)(USBx) + 0x400U)))))
 
 #define PCD_SET_EP_TX_CNT(USBx, bEpNum,wCount) (*PCD_EP_TX_CNT((USBx), (bEpNum)) = (wCount))
 #define PCD_SET_EP_RX_CNT(USBx, bEpNum,wCount) do {\
-    uint16_t *pdwReg =PCD_EP_RX_CNT((USBx),(bEpNum)); \
+    __IO uint16_t *pdwReg =PCD_EP_RX_CNT((USBx),(bEpNum)); \
     PCD_SET_EP_CNT_RX_REG((pdwReg), (wCount))\
   } while(0)
 
