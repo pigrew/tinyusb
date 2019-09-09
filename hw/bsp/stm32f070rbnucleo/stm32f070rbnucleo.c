@@ -91,6 +91,8 @@ void board_init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(BUTTON_PORT, &GPIO_InitStruct);
 
+  // Start USB clock
+  __HAL_RCC_USB_CLK_ENABLE();
 }
 
 //--------------------------------------------------------------------+
