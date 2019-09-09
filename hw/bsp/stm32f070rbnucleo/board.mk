@@ -3,9 +3,10 @@ CFLAGS += \
 	-DSTM32F070xB \
 	-mthumb \
 	-mabi=aapcs-linux \
-	-mcpu=cortex-m4 \
+	-mcpu=cortex-m0 \
 	-mfloat-abi=soft \
 	-nostdlib -nostartfiles \
+	-ffunction-sections -fdata-sections \
 	-DCFG_TUSB_MCU=OPT_MCU_STM32_FSDEV
 
 ST_HAL_DRIVER = hw/mcu/st/st_driver/STM32F0xx_HAL_Driver
