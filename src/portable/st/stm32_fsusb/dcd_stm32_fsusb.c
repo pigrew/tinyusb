@@ -49,8 +49,6 @@
  * - You have the ST CMSIS library linked into the project. HAL is not used.
  *
  * Current driver limitations (i.e., a list of features for you to add):
- * - Driver never sends zero-byte non-EP0 packets.
- *   - I think this is correct, and should be handled by the class driver?
  * - STALL not handled
  * - Only tested on F070RB; other models will have an #error during compilation
  * - All EP BTABLE buffers are created as max 64 bytes.
@@ -90,7 +88,7 @@
 
 #include "tusb_option.h"
 
-#if TUSB_OPT_DEVICE_ENABLED && CFG_TUSB_MCU == OPT_MCU_STM32F0
+#if TUSB_OPT_DEVICE_ENABLED && CFG_TUSB_MCU == OPT_MCU_STM32_FSUSB
 
 // In order to reduce the dependance on HAL, we undefine this.
 // Some definitions are copied to our private include file.
@@ -98,7 +96,7 @@
 
 #include "device/dcd.h"
 #include "stm32f0xx.h"
-#include "portable/st/stm32f0/dcd_stm32f0_pvt_st.h"
+#include "portable/st/stm32_fsusb/dcd_stm32_fsusb_pvt_st.h"
 #include "uart_util.h"
 
 char msg[128];
@@ -118,7 +116,6 @@ typedef struct {
   uint8_t * buffer;
   uint16_t total_len;
   uint16_t queued_len;
-  bool need_zero_len_tx;
 } xfer_ctl_t;
 
 static xfer_ctl_t  xfer_status[MAX_EP_COUNT][2];
@@ -285,7 +282,7 @@ static uint16_t dcd_ep_ctr_handler()
 
         xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
 
-        if((xfer->total_len == xfer->queued_len)/* && !xfer->need_zero_len_tx*/) {
+        if((xfer->total_len == xfer->queued_len)) {
           dcd_event_xfer_complete(0, 0x80 + EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
           if((newDADDR != 0) && ( xfer->total_len == 0U))
           {
@@ -387,6 +384,12 @@ static uint16_t dcd_ep_ctr_handler()
         }
         else
         {
+          uint16_t remaining = xfer->total_len - xfer->queued_len;
+          if(remaining >=64)
+            PCD_SET_EP_RX_CNT(USB, EPindex,64);
+          else
+            PCD_SET_EP_RX_CNT(USB, EPindex,remaining);
+
           PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_RX_VALID);
         }
 
@@ -523,14 +526,11 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
 static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
 {
   uint16_t len = xfer->total_len - xfer->queued_len;
-  xfer->need_zero_len_tx = false;
 
   if(len > 64) // max packet size for FS transfer
     len = 64;
   dcd_write_packet_memory(*PCD_EP_TX_ADDRESS(USB,ep_ix), &(xfer->buffer[xfer->queued_len]), len);
   xfer->queued_len += len;
-  if(len == 64 && (xfer->queued_len == xfer->total_len) )
-    xfer->need_zero_len_tx = true;
 
   PCD_SET_EP_TX_CNT(USB,ep_ix,len);
   PCD_SET_EP_TX_STATUS(USB, ep_ix, USB_EP_TX_VALID)
@@ -548,19 +548,19 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   xfer->buffer = buffer;
   xfer->total_len = total_bytes;
   xfer->queued_len = 0;
-  xfer->need_zero_len_tx = true;
 
   if ( dir == TUSB_DIR_OUT )
   {
-    // Weird edge cases can happen if one accepts multi-packet transfers which are not multiples of 64
-    TU_ASSERT((total_bytes <64) || (total_bytes % 64 == 0));
     // A setup token can occur immediately after an OUT STATUS packet so make sure we have a valid
     // buffer for the control endpoint.
     if (epnum == 0 && buffer == NULL) {
         xfer->buffer = (uint8_t*)_setup_packet;
         PCD_SET_EP_KIND(USB,0); // Expect a zero-byte INPUT
     }
-    PCD_SET_EP_RX_CNT(USB,epnum,total_bytes);
+    if(total_bytes > 64)
+      PCD_SET_EP_RX_CNT(USB,epnum,64);
+    else
+      PCD_SET_EP_RX_CNT(USB,epnum,total_bytes);
     PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_VALID);
   }
   else // IN
