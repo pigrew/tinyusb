@@ -95,6 +95,12 @@ void board_init(void)
   __HAL_RCC_USB_CLK_ENABLE();
 }
 
+void dcd_fs_irqHandler(void);
+void USB_IRQHandler(void)
+{
+	dcd_fs_irqHandler();
+}
+
 //--------------------------------------------------------------------+
 // Board porting API
 //--------------------------------------------------------------------+
@@ -108,13 +114,6 @@ uint32_t board_button_read(void)
 {
   return BUTTON_STATE_ACTIVE == HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN);
 }
-
-void dcd_fs_irqHandler(void);
-void USB_IRQHandler(void)
-{
-	dcd_fs_irqHandler();
-}
-
 
 #if CFG_TUSB_OS  == OPT_OS_NONE
 volatile uint32_t system_ticks = 0;
