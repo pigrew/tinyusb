@@ -519,7 +519,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   uint8_t const dir   = tu_edpt_dir(p_endpoint_desc->bEndpointAddress);
 
   // Isochronous not supported (yet), and some other driver assumptions.
-  TU_ASSERT(p_endpoint_desc->bDescriptorType != TUSB_XFER_ISOCHRONOUS);
+  TU_ASSERT(p_endpoint_desc->bmAttributes.xfer != TUSB_XFER_ISOCHRONOUS);
   TU_ASSERT(p_endpoint_desc->wMaxPacketSize.size <= MAX_PACKET_SIZE);
   TU_ASSERT(epnum < MAX_EP_COUNT);
   TU_ASSERT((p_endpoint_desc->wMaxPacketSize.size %2) == 0);
@@ -527,8 +527,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
  // __IO uint16_t * const epreg = &(EPREG(epnum));
 
   // Set type
-  //*epreg &= ~(USB_EP_T_MASK | USB_EPKIND_MASK | USB_EPADDR_FIELD);
-  switch(p_endpoint_desc->bDescriptorType) {
+  switch(p_endpoint_desc->bmAttributes.xfer) {
   case TUSB_XFER_CONTROL:
     PCD_SET_EPTYPE(USB, epnum, USB_EP_CONTROL); break;
   case TUSB_XFER_ISOCHRONOUS:
