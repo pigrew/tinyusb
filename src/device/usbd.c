@@ -32,12 +32,10 @@
 #include "usbd.h"
 #include "device/usbd_pvt.h"
 #include "dcd.h"
-#include "uart_util.h"
+
 #ifndef CFG_TUD_TASK_QUEUE_SZ
 #define CFG_TUD_TASK_QUEUE_SZ   16
 #endif
-
-char msg[100];
 
 //--------------------------------------------------------------------+
 // Device Data
@@ -371,7 +369,6 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
       switch ( p_request->bRequest )
       {
         case TUSB_REQ_SET_ADDRESS:
-
           // Depending on mcu, status phase could be sent either before or after changing device address
           // Therefore DCD must include zero-length status response
           dcd_set_address(rhport, (uint8_t) p_request->wValue);
@@ -398,7 +395,6 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
         break;
 
         case TUSB_REQ_GET_DESCRIPTOR:
-
           TU_VERIFY( process_get_descriptor(rhport, p_request) );
         break;
 

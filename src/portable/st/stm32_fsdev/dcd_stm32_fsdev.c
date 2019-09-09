@@ -99,9 +99,7 @@
 #undef USE_HAL_DRIVER
 
 #include "device/dcd.h"
-#include "stm32f0xx.h"
 #include "portable/st/stm32_fsdev/dcd_stm32_fsdev_pvt_st.h"
-#include "uart_util.h"
 
 
 /*****************************************************
@@ -132,7 +130,6 @@
 #endif
 
 #if ((DCD_STM32_BTABLE_BASE + DCD_STM32_BTABLE_LENGTH)>PMA_LENGTH)
-
 #  error BTABLE does not fit in PMA RAM
 #endif
 
