@@ -6,8 +6,7 @@ CFLAGS += \
 	-mcpu=cortex-m0 \
 	-mfloat-abi=soft \
 	-nostdlib -nostartfiles \
-	-ffunction-sections -fdata-sections \
-	-DCFG_TUSB_MCU=OPT_MCU_STM32_FSDEV
+	-DCFG_TUSB_MCU=OPT_MCU_STM32F0
 
 ST_HAL_DRIVER = hw/mcu/st/st_driver/STM32F0xx_HAL_Driver
 ST_CMSIS = hw/mcu/st/st_driver/CMSIS/Device/ST/STM32F0xx
@@ -37,10 +36,10 @@ VENDOR = st
 CHIP_FAMILY = stm32_fsdev
 
 # For freeRTOS port source
-FREERTOS_PORT = ARM_CM4F
+FREERTOS_PORT = ARM_CM0
 
 # For flash-jlink target
-JLINK_DEVICE = stm32f303vc
+JLINK_DEVICE = stm32f070rb
 JLINK_IF = swd
 
 # Path to STM32 Cube Programmer CLI, should be added into system path 

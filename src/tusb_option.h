@@ -51,9 +51,13 @@
 #define OPT_MCU_SAMD21        200 ///< MicroChip SAMD21
 #define OPT_MCU_SAMD51        201 ///< MicroChip SAMD51
 
+// ST Synopsis OTG devices
 #define OPT_MCU_STM32F4       300 ///< ST STM32F4
-#define OPT_MCU_STM32_FSDEV   301 ///< ST STM32F3
+#define OPT_MCU_STM32F3       301 ///< ST STM32F0x0
 #define OPT_MCU_STM32H7       302 ///< ST STM32H7
+#define OPT_MCU_STM32F0       303 ///< ST STM32F0
+#define OPT_MCU_STM32F1       304 ///< ST STM32F1
+
 
 /** @} */
 
