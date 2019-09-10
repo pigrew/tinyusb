@@ -1,6 +1,5 @@
 html
 latex
-test/_build
 *.d
 *.o
 *.P
