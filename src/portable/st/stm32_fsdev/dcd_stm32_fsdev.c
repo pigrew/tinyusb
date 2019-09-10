@@ -324,7 +324,7 @@ static void dcd_handle_bus_reset(void)
     EPREG(0) = 0u;
   }
 
-  ep_buf_ptr = 8*MAX_EP_COUNT; // 8 bytes per endpoint (two TX and two RX words, each)
+  ep_buf_ptr = DCD_STM32_BTABLE_BASE + 8*MAX_EP_COUNT; // 8 bytes per endpoint (two TX and two RX words, each)
   dcd_edpt_open (0, &ep0OUT_desc);
   dcd_edpt_open (0, &ep0IN_desc);
   newDADDR = 0;
