@@ -112,6 +112,27 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
   return true;
 }
 bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * request) {
+  TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
+
+  switch(request->bReqest)
+  {
+  // USBTMC Required Requests
+  case USBTMC_bREQUEST_INITIATE_ABORT_BULK_OUT:
+  case USBTMC_bREQUEST_CHECK_ABORT_BULK_OUT_STATUS:
+  case USBTMC_bREQUEST_INITIATE_ABORT_BULK_IN:
+  case USBTMC_bREQUEST_CHECK_ABORT_BULK_IN_STATUS:
+  case USBTMC_bREQUEST_INITIATE_CLEAR:
+  case USBTMC_bREQUEST_CHECK_CLEAR_STATUS:
+  case USBTMC_bREQUEST_GET_CAPABILITIES:
+    break;
+  // USBTMC Optional Requests
+  case USBTMC_bREQUEST_INDICATOR_PULSE: // Optional
+    break;
+    // USB488 requests
+  default:
+    TU_VERIFY(false);
+  }
+  TU_ASSERT(false);
   return true;
 }
 bool usbtmcd_control_complete(uint8_t rhport, tusb_control_request_t const * request) {
