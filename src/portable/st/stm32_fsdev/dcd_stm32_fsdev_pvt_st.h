@@ -50,34 +50,35 @@
 // F0x2 models are crystal-less
 // All have internal D+ pull-up
 // 070RB:    2 x 16 bits/word memory     LPM Support, BCD Support
-
+// PMA dedicated to USB (no sharing with CAN)
 #elif defined(STM32F102x6) | defined(STM32F102x6) | \
       defined(STM32F103x6) | defined(STM32F103xB) | \
       defined(STM32F103xE) | defined(STM32F103xB)
 #include "stm32f1xx.h"
 #define PMA_LENGTH 512u
 // NO internal Pull-ups
-//         *B, and *C:    2 x 16 bits/word memory
+//         *B, and *C:    2 x 16 bits/word
 #error The F102/F103 driver is expected not to work, but it might? Try it?
 
 #elif defined(STM32F302xB) | defined(STM32F302xC) | \
-      defined(STM32F303xB) | defined(STM32F303xC) | \
+      defined(STM32F303xB) | defined(STM32F303xC) | \ //good
       defined(STM32F373xC)
 #include "stm32f3xx.h"
 #define PMA_LENGTH 512u
 // NO internal Pull-ups
-//         *B, and *C:    1 x 16 bits/word memory
-
+//         *B, and *C:    1 x 16 bits/word
+// PMA dedicated to USB (no sharing with CAN)
 #elif defined(STM32F302x6) | defined(STM32F302x8) | \
-      defined(STM32F302xD) | defined(STM32F323xE) | \
-      defined(STM32F303xD) | defined(STM32F302xE) | \
+      defined(STM32F302xD) | defined(STM32F302xE) | \
+      defined(STM32F303xD) | defined(STM32F303xE) | \ //good
 #include "stm32f3xx.h"
 #define PMA_LENGTH 1024u
 // NO internal Pull-ups
-// *6, *8, *D, and *E:    2 x 16 bits/word memory     LPM Support
-
+// *6, *8, *D, and *E:    2 x 16 bits/word     LPM Support
+// When CAN clock is enabled, USB can use first 768 bytes ONLY.
 #else
 #error You are using an untested or unimplemented STM32 variant. Please update the driver.
+// This includes for L0x2, L0x3, L1, L4x2 and L4x3
 #endif
 
 // For purposes of accessing the packet

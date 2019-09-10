@@ -80,6 +80,7 @@
  * - F3 models use three separate interrupts. I think we could only use the LP interrupt for
  *     everything?  However, the interrupts are configurable so the DisableInt and EnableInt
  *     below functions could be adjusting the wrong interrupts (if they had been reconfigured)
+ * - LPM is not used correctly, or at all?
  *
  * USB documentation and Reference implementations
  * - STM32 Reference manuals
@@ -716,14 +717,15 @@ static void dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   __IO uint16_t *pdwVal;
 
   srcVal = src;
-  pdwVal = (__IO uint16_t*)( ((uint8_t*)USB) + 0x400U + dst );
+  pdwVal = &(pma[PMA_STRIDE * dst]);
 
   for (i = n; i != 0; i--)
   {
     temp1 = (uint16_t) *srcVal;
     srcVal++;
     temp2 = temp1 | ((uint16_t)((uint16_t) ((*srcVal) << 8U))) ;
-    *pdwVal++ = temp2;
+    *pdwVal = temp2;
+    pdwVal += PMA_STRIDE;
     srcVal++;
   }
 }
@@ -743,19 +745,21 @@ static void dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
   __IO const uint16_t *pdwVal;
   uint32_t temp;
 
-  pdwVal = (__IO uint16_t*)( ((uint8_t*)USB) + 0x400U + src );
+  pdwVal = &(pma[PMA_STRIDE *src]);
   uint8_t *dstVal = (uint8_t*)dst;
 
   for (i = n; i != 0U; i--)
   {
-    temp = *pdwVal++;
+    temp = *pdwVal;
+    pdwVal += PMA_STRIDE;
     *dstVal++ = ((temp >> 0) & 0xFF);
     *dstVal++ = ((temp >> 8) & 0xFF);
   }
 
   if (wNBytes % 2)
   {
-    temp = *pdwVal++;
+    temp = *pdwVal;
+    pdwVal += PMA_STRIDE;
     *dstVal++ = ((temp >> 0) & 0xFF);
   }
 }
