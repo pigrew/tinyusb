@@ -11,19 +11,20 @@
 
 #include "usbtmc.h"
 #include "usbtmc_device.h"
+#include "device/dcd.h"
 
 typedef struct {
   uint8_t itf_id;
-  uint8_t ep_in;
-  uint8_t ep_out;
-  uint8_t ep_int;
+  uint8_t ep_bulk_in;
+  uint8_t ep_bulk_out;
+  uint8_t ep_int_in;
 } usbtmc_interface_state_t;
 
 static usbtmc_interface_state_t usbtmc_state = {
-    .itf_id = 0x255,
-    .ep_in = 0x255,
-    .ep_out = 0x255,
-    .ep_int = 0x255
+    .itf_id = 0xFF,
+    .ep_bulk_in = 0,
+    .ep_bulk_out = 0,
+    .ep_int_in = 0
 };
 
 void usbtmcd_init(void)
@@ -55,16 +56,42 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
   {
     if ( TUSB_DESC_ENDPOINT == p_desc[DESC_OFFSET_TYPE])
     {
-      const tusb_desc_endpoint_t *ep = (const tusb_desc_endpoint_t *)p_desc;
+      tusb_desc_endpoint_t const *ep_desc = (tusb_desc_endpoint_t const *)p_desc;
+      switch(ep_desc->bmAttributes.xfer) {
+        case TUSB_XFER_BULK:
+          if (tu_edpt_dir(ep_desc->bEndpointAddress) == TUSB_DIR_IN) {
+            usbtmc_state.ep_bulk_in = ep_desc->bEndpointAddress;
+          } else {
+            usbtmc_state.ep_bulk_out = ep_desc->bEndpointAddress;
+          }
+
+          break;
+        case TUSB_XFER_INTERRUPT:
+          TU_ASSERT(tu_edpt_dir(ep_desc->bEndpointAddress) == TUSB_DIR_IN);
+          TU_ASSERT(usbtmc_state.ep_int_in == 0);
+          usbtmc_state.ep_int_in = ep_desc->bEndpointAddress;
+          break;
+        default:
+          TU_ASSERT(false);
+      }
+      TU_VERIFY( dcd_edpt_open(rhport, ep_desc));
       found_endpoints++;
     }
-    (*p_length) += p_desc[DESC_OFFSET_LEN];
+    (*p_length) = (uint8_t)((*p_length) + p_desc[DESC_OFFSET_LEN]);
     p_desc = tu_desc_next(p_desc);
   }
 
-  // bulk endpoints are required.
-  TU_ASSERT(usbtmc_state.ep_in != 0x255);
-  TU_ASSERT(usbtmc_state.ep_out != 0x255);
+  // bulk endpoints are required, but interrupt IN is optional
+  TU_ASSERT(usbtmc_state.ep_bulk_in != 0);
+  TU_ASSERT(usbtmc_state.ep_bulk_out != 0);
+  if (itf_desc->bNumEndpoints == 2) {
+    TU_ASSERT(usbtmc_state.ep_int_in == 0);
+  }
+  else if (itf_desc->bNumEndpoints == 2)
+  {
+    TU_ASSERT(usbtmc_state.ep_int_in != 0);
+  }
+
 
 /*
 
@@ -74,18 +101,11 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
   return true;
 */
 
-#if defined(CFG_TUD_USBTMC_ENABLE_INT_EP)
-   *p_length = USBTMC_DESC_LEN (USBTMC_IF_DESCRIPTOR_LEN + USBTMC_BULK_DESCRIPTORS_LEN + USBTMC_INT_DESCRIPTOR_LEN);
-
-#else
-  *p_length = (USBTMC_IF_DESCRIPTOR_LEN + USBTMC_BULK_DESCRIPTORS_LEN);
-
-#endif
   return true;
 }
 void usbtmcd_reset(uint8_t rhport)
 {
-
+  // FIXME: Do endpoints need to be closed here?
 }
 bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
