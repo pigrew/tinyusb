@@ -19,9 +19,15 @@ typedef struct TU_ATTR_PACKED
   uint8_t bTag    			 ; ///< Transfer ID 1<=bTag<=255
   uint8_t bTagInverse        ; ///< Complement of the tag
   uint8_t Reserved           ; ///< Must be 0x00
-  // Next 8 bytes are message-specific
 } usbtmc_msg_header_t;
 
+typedef struct TU_ATTR_PACKED
+{
+  usbtmc_msg_header_t header;
+  uint8_t data[8];
+} usbtmc_msg_generic_t;
+
+// Next 8 bytes are message-specific
 typedef struct TU_ATTR_PACKED {
 	usbtmc_msg_header_t header ; ///< Header
 	uint32_t TransferSize      ; ///< Transfer size; LSB first
