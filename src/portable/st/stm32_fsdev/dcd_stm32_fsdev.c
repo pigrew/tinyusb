@@ -216,7 +216,7 @@ void dcd_init (uint8_t rhport)
 
   // Initialize the BTABLE for EP0 at this point (though setting up the EP0R is unneeded)
   // This is actually not necessary, but helps debugging to start with a blank RAM area
-  for(uint16_t i=0;i<(PMA_LENGTH>>1); i++)
+  for(uint16_t i=0;i<(DCD_STM32_BTABLE_LENGTH>>1); i++)
   {
     pma[PMA_STRIDE*(DCD_STM32_BTABLE_BASE + i)] = 0u;
   }
@@ -613,7 +613,7 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
 
   PCD_SET_EP_TX_CNT(USB,ep_ix,len);
-  PCD_SET_EP_TX_STATUS(USB, ep_ix, USB_EP_TX_VALID)
+  PCD_SET_EP_TX_STATUS(USB, ep_ix, USB_EP_TX_VALID);
 }
 
 bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
@@ -700,8 +700,8 @@ void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr)
   * @brief Copy a buffer from user memory area to packet memory area (PMA).
   *        This uses byte-access for user memory (so support non-aligned buffers)
   *        and 16-bit access for packet memory.
-  * @param   dst, but not necessary in system-memory addressing
-  * @param   pbUsrBuf pointer to user memory area.
+  * @param   dst, byte address in PMA; must be 16-bit aligned
+  * @param   src pointer to user memory area.
   * @param   wPMABufAddr address into PMA.
   * @param   wNBytes no. of bytes to be copied.
   * @retval None
@@ -712,12 +712,19 @@ static void dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   uint32_t i;
   uint16_t temp1, temp2;
   const uint8_t * srcVal;
+
+#ifdef DEBUG
+  if(((dst%2) != 0) ||
+      (dst < DCD_STM32_BTABLE_BASE) ||
+      dst >= (DCD_STM32_BTABLE_BASE + DCD_STM32_BTABLE_LENGTH))
+    while(1) TU_BREAKPOINT();
+#endif
   // The GCC optimizer will combine access to 32-bit sizes if we let it. Force
   // it volatile so that it won't do that.
   __IO uint16_t *pdwVal;
 
   srcVal = src;
-  pdwVal = &(pma[PMA_STRIDE * dst]);
+  pdwVal = &pma[PMA_STRIDE*(dst>>1)];
 
   for (i = n; i != 0; i--)
   {
@@ -745,7 +752,14 @@ static void dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
   __IO const uint16_t *pdwVal;
   uint32_t temp;
 
-  pdwVal = &(pma[PMA_STRIDE *src]);
+#ifdef DEBUG
+  if((src%2) != 0 ||
+      (src < DCD_STM32_BTABLE_BASE) ||
+      src >= (DCD_STM32_BTABLE_BASE + DCD_STM32_BTABLE_LENGTH))
+    while(1) TU_BREAKPOINT();
+#endif
+
+  pdwVal = &pma[PMA_STRIDE*(src>>1)];
   uint8_t *dstVal = (uint8_t*)dst;
 
   for (i = n; i != 0U; i--)

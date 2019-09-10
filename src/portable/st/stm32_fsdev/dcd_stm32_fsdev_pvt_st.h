@@ -172,11 +172,11 @@ static __IO uint16_t * const pma = (__IO uint16_t*)USB_PMAADDR;
     USB_EP_CTR_RX|USB_EP_CTR_TX|(((uint32_t)(PCD_GET_ENDPOINT((USBx), (bEpNum)))) & USB_EPREG_MASK) | (bAddr))
 
 // Pointers to the PMA table entries (using the ARM address space)
-#define PCD_EP_TX_ADDRESS_PTR(USBx, bEpNum) (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*8u)]))
-#define PCD_EP_TX_CNT_PTR(USBx, bEpNum)     (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*8u + 2u)]))
+#define PCD_EP_TX_ADDRESS_PTR(USBx, bEpNum) (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*4u + 0u)]))
+#define PCD_EP_TX_CNT_PTR(USBx, bEpNum)     (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*4u + 1u)]))
 
-#define PCD_EP_RX_ADDRESS_PTR(USBx, bEpNum) (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*8u + 4u)]))
-#define PCD_EP_RX_CNT_PTR(USBx, bEpNum)     (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*8u + 6u)]))
+#define PCD_EP_RX_ADDRESS_PTR(USBx, bEpNum) (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*4u + 2u)]))
+#define PCD_EP_RX_CNT_PTR(USBx, bEpNum)     (&(pma[PMA_STRIDE*((USBx)->BTABLE + (bEpNum)*4u + 3u)]))
 
 #define PCD_SET_EP_TX_CNT(USBx, bEpNum,wCount) (*PCD_EP_TX_CNT_PTR((USBx), (bEpNum)) = (wCount))
 #define PCD_SET_EP_RX_CNT(USBx, bEpNum,wCount) do {\
