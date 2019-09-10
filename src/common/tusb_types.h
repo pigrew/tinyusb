@@ -54,7 +54,7 @@ typedef enum
 /// defined base on USB Specs Endpoint's bmAttributes
 typedef enum
 {
-  TUSB_XFER_CONTROL = 0 ,
+  TUSB_XFER_CONTROL = 0u ,
   TUSB_XFER_ISOCHRONOUS ,
   TUSB_XFER_BULK        ,
   TUSB_XFER_INTERRUPT

@@ -7,7 +7,7 @@
 
 #include "tusb_option.h"
 
-#if (TUSB_OPT_DEVICE_ENABLED && CFG_TUD_TMC)
+#if (TUSB_OPT_DEVICE_ENABLED && CFG_TUD_USBTMC)
 #include "usbtmc.h"
 
 #endif /* CFG_TUD_TSMC */
