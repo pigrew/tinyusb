@@ -32,6 +32,7 @@
 #include "usbd.h"
 #include "device/usbd_pvt.h"
 #include "dcd.h"
+#include "class/usbtmc/usbtmc_device.h"
 
 #ifndef CFG_TUD_TASK_QUEUE_SZ
 #define CFG_TUD_TASK_QUEUE_SZ   16
@@ -142,6 +143,20 @@ static usbd_class_driver_t const usbd_class_drivers[] =
       .sof              = NULL
   },
   #endif
+
+#if CFG_TUD_USBTMC
+  // Presently USBTMC is the only defined class with the APP_SPECIFIC class code...
+{
+    .class_code       = TUSB_CLASS_APPLICATION_SPECIFIC,
+    .init             = usbtmcd_init,
+    .reset            = usbtmcd_reset,
+    .open             = usbtmcd_open,
+    .control_request  = usbtmcd_control_request,
+    .control_complete = usbtmcd_control_complete,
+    .xfer_cb          = usbtmcd_xfer_cb,
+    .sof              = NULL
+},
+#endif
 };
 
 enum { USBD_CLASS_DRIVER_COUNT = TU_ARRAY_SZIE(usbd_class_drivers) };
