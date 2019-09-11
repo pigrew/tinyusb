@@ -26,13 +26,13 @@ typedef enum {
   USBTMC_MSGID_USB488_TRIGGER = 128u,
 } usbtmc_msgid_enum;
 
-/// \brief Message header (For BULK OUT); 4 bytes
+/// \brief Message header (For BULK OUT and BULK IN); 4 bytes
 typedef struct TU_ATTR_PACKED
 {
   uint8_t MsgID              ; ///< Message type ID (usbtmc_msgid_enum)
   uint8_t bTag    		       ; ///< Transfer ID 1<=bTag<=255
   uint8_t bTagInverse        ; ///< Complement of the tag
-  uint8_t Reserved           ; ///< Must be 0x00
+  uint8_t _reserved           ; ///< Must be 0x00
 } usbtmc_msg_header_t;
 
 typedef struct TU_ATTR_PACKED
@@ -41,13 +41,13 @@ typedef struct TU_ATTR_PACKED
   uint8_t data[8];
 } usbtmc_msg_generic_t;
 
+/* Uses on the bulk-out endpoint: */
 // Next 8 bytes are message-specific
 typedef struct TU_ATTR_PACKED {
 	usbtmc_msg_header_t header ; ///< Header
 	uint32_t TransferSize      ; ///< Transfer size; LSB first
 	struct {
       uint8_t EOM  : 1         ; ///< EOM set on last byte
-      uint8_t : 0;
   } bmTransferAttributes;
   uint8_t _reserved[3];
 } usbtmc_msg_request_dev_dep_out;
@@ -64,7 +64,21 @@ typedef struct TU_ATTR_PACKED {
   uint8_t _reserved[2];
 } usbtmc_msg_request_dev_dep_in;
 
+/* Bulk-in headers */
 
+typedef struct TU_ATTR_PACKED
+{
+  usbtmc_msg_header_t header;
+  uint32_t TransferSize;
+  struct {
+    uint8_t EOM: 1;           ///< Last byte of transfer is the end of the message
+    uint8_t UsingTermChar: 1; ///< Support TermChar && Request.TermCharEnabled && last char in transfer is TermChar
+  } bmTransferAttributes;
+  uint8_t _reserved[3];
+} usbtmc_msg_dev_dep_msg_in_header_t;
+
+
+/* Unsupported vendor things.... Are these ever used?*/
 
 typedef struct TU_ATTR_PACKED {
   usbtmc_msg_header_t header ; ///< Header

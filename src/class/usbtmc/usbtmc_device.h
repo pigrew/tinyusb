@@ -30,7 +30,25 @@ extern usbtmc_response_capabilities const usbtmcd_app_capabilities;
 
 bool usbtmcd_app_msgBulkOut_start(usbtmc_msg_request_dev_dep_out const * msgHeader);
 
-bool usbtmcd_app_msg_data(void *data, size_t len, bool atEnd);
+// transfer_complete does not imply that a message is complete.
+bool usbtmcd_app_msg_data(void *data, size_t len, bool transfer_complete);
+
+bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in const * request);
+
+bool usbtmcd_app_msgBulkIn_complete(uint8_t rhport);
+
+/*******************************************
+ * Called from app
+ *
+ * We keep a reference to the buffer, so it MUST not change until the app is
+ * notified that the transfer is complete.
+ ******************************************/
+
+bool usbtmcd_transmit_dev_msg_data(
+    uint8_t rhport,
+    usbtmc_msg_dev_dep_msg_in_header_t const * hdr,
+    const void *data);
+
 
 /* "callbacks" from USB device core */
 
