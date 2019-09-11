@@ -168,13 +168,6 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
   }
   TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, 64));
 
-/*
-
-  // Prepare for incoming data
-
-  return true;
-*/
-
   return true;
 }
 void usbtmcd_reset(uint8_t rhport)
@@ -296,7 +289,7 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 }
 
 bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * request) {
-  uint bTag;
+  ushort bTag;
   // We only handle class requests.
   if(request->bmRequestType_bit.type != TUSB_REQ_TYPE_CLASS)
     return false;
@@ -318,35 +311,31 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     TU_VERIFY(request->wValue == 0x0000);
     TU_VERIFY(request->wIndex == usbtmc_state.itf_id);
     TU_VERIFY(request->wLength == sizeof(usbtmcd_app_capabilities));
-    return tud_control_xfer(rhport, request, (void*)&usbtmcd_app_capabilities, sizeof(usbtmcd_app_capabilities));
-
+    TU_VERIFY(tud_control_xfer(rhport, request, (void*)&usbtmcd_app_capabilities, sizeof(usbtmcd_app_capabilities)));
+    return true;
   // USBTMC Optional Requests
   case USBTMC_bREQUEST_INDICATOR_PULSE: // Optional
     TU_VERIFY(false);
     return false;
-    break;
 
 #if (USBTMC_CFG_ENABLE_488)
     // USB488 required requests
   case USBTMC488_bREQUEST_READ_STATUS_BYTE:
 
-    bTag = request->wValue & 0x007F;
+    bTag = request->wValue & 0x7F;
     TU_VERIFY(request->bmRequestType == 0xA1);
-    TU_VERIFY((request->wValue & (~0x007F)) == 0x0000); // Other bits are required to be zero
+    TU_VERIFY((request->wValue & (~0x7F)) == 0u); // Other bits are required to be zero
     TU_VERIFY(bTag >= 0x02 && bTag <= 127);
     TU_VERIFY(request->wIndex == usbtmc_state.itf_id);
     TU_VERIFY(request->wLength == 0x0003);
     usbtmc_read_stb_rsp_488_t rsp;
-    rsp.bTag = bTag;
+    rsp.bTag = (uint8_t)bTag;
     if(usbtmc_state.ep_int_in != 0)
     {
       rsp.USBTMC_status = USBTMC_STATUS_SUCCESS;
       rsp.statusByte = 0x00; // Use interrupt endpoint, instead.
       usbtmc_read_stb_interrupt_488_t intMsg = {
-          .bNotify1 = {
-              .bTag = bTag,
-              .one = 1u
-          },
+          .bNotify1 = (uint8_t)(0x80 | bTag),
           .StatusByte = 0x12
       };
       usbd_edpt_xfer(rhport, usbtmc_state.ep_int_in, (void*)&intMsg,sizeof(intMsg));
@@ -354,7 +343,8 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     } else {
       TU_VERIFY(usbtmcd_app_get_stb_rsp(rhport, &rsp));
     }
-    return tud_control_xfer(rhport, request, (void*)&rsp, sizeof(rsp));
+    TU_VERIFY(tud_control_xfer(rhport, request, (void*)&rsp, sizeof(rsp)));
+    return true;
 
     // USB488 optional requests
   case USBTMC488_bREQUEST_REN_CONTROL:
@@ -362,7 +352,6 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
   case USBTMC488_bREQUEST_LOCAL_LOCKOUT:
     TU_VERIFY(false);
     return false;
-    break;
 #endif
 
   default:

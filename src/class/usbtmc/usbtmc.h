@@ -225,12 +225,16 @@ TU_VERIFY_STATIC(sizeof(usbtmc_read_stb_rsp_488_t) == 3u, "struct wrong length")
 
 typedef struct TU_ATTR_PACKET
 {
-  struct {
-    uint8_t bTag : 7;
-    uint8_t one  : 1;
-  } bNotify1;
+  union {
+    struct {
+      uint8_t bTag : 7;
+      uint8_t one  : 1;
+    } bNotify1Struct;
+    uint8_t bNotify1;
+  };
   uint8_t StatusByte;
 } usbtmc_read_stb_interrupt_488_t;
+TU_VERIFY_STATIC(sizeof(usbtmc_read_stb_interrupt_488_t) == 2u, "struct wrong length");
 
 #endif
 
