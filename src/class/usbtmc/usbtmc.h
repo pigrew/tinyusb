@@ -14,6 +14,10 @@
 
  If USB488DeviceCapabilites.D2 = 1 (SR1), then there must be a INT endpoint.
 */
+
+#define USBTMC_VERSION 0x0100
+#define USBTMC_488_VERSION 0x0100
+
 typedef enum {
   USBTMC_MSGID_DEV_DEP_MSG_OUT = 1u
   #define USBTMC_MSGID_DEV_DEP_MSG_IN = 2u,
@@ -122,50 +126,62 @@ typedef enum {
   USBTMC488_bREQUEST_REN_CONTROL       = 160u,
   USBTMC488_bREQUEST_GO_TO_LOCAL       = 161u,
   USBTMC488_bREQUEST_LOCAL_LOCKOUT     = 162u,
-};
+} usbtmc_request_type_488_enum;
 
-enum {
+typedef enum {
   USBTMC_STATUS_SUCCESS = 0x01,
   USBTMC_STATUS_PENDING = 0x02,
   USBTMC_STATUS_FAILED = 0x80,
   USBTMC_STATUS_TRANSFER_NOT_IN_PROGRESS = 0x81,
   USBTMC_STATUS_SPLIT_NOT_IN_PROGRESS = 0x82,
   USBTMC_STATUS_SPLIT_IN_PROGRESS  = 0x83
-};
+} usbtmc_status_enum;
 
 /************************************************************
- * USBTMC Descriptor Templates
- *************************************************************/
+ * Control Responses
+ */
 
-#define USBTMC_APP_CLASS    TUSB_CLASS_APPLICATION_SPECIFIC
-#define USBTMC_APP_SUBCLASS 0x03
+typedef struct TU_ATTR_PACKED {
+  uint8_t USBTMC_status;                 ///< usbtmc_status_enum
+  uint8_t _reserved;
+  uint16_t bcdUSBTMC;                    ///< USBTMC_VERSION
 
-#define USBTMC_PROTOCOL_STD    0x00
-#define USBTMC_PROTOCOL_USB488 0x01
+  struct {
+    uint8_t listenOnly :1;
+    uint8_t talkOnly :1;
+    uint8_t supportsIndicatorPulse :1;
+  } bmIntfcCapabilities;
+  uint8_t _reserved2[6];
+  uint8_t _reserved3;
+} usbtmc_response_capabilities;
 
-//   Interface number, number of endpoints, EP string index, USB_TMC_PROTOCOL*, bulk-out endpoint ID,
-//   bulk-in endpoint ID
-#define USBTMC_IF_DESCRIPTOR(_itfnum, _bNumEndpoints, _stridx, _itfProtocol) \
-/* Interface */ \
-  0x09, TUSB_DESC_INTERFACE, _itfnum, 0x00, _bNumEndpoints, USBTMC_APP_CLASS, USBTMC_APP_SUBCLASS, _itfProtocol, _stridx
+typedef struct TU_ATTR_PACKED {
+  uint8_t USBTMC_status;                 ///< usbtmc_status_enum
+  uint8_t _reserved;
+  uint16_t bcdUSBTMC;                    ///< USBTMC_VERSION
 
-#define USBTMC_IF_DESCRIPTOR_LEN 9u
+  struct {
+    uint8_t listenOnly :1;
+    uint8_t talkOnly :1;
+    uint8_t supportsIndicatorPulse :1;
+  } bmIntfcCapabilities;
 
-// bulk-out Size must be a multiple of 4 bytes
-#define USBTMC_BULK_DESCRIPTORS(_epout,_epoutsize, _epin, _epinsize) \
-/* Endpoint Out */ \
-7, TUSB_DESC_ENDPOINT, _epout, TUSB_XFER_BULK, U16_TO_U8S_LE(_epoutsize), 0u, \
-/* Endpoint In */ \
-7, TUSB_DESC_ENDPOINT, _epin, TUSB_XFER_BULK, U16_TO_U8S_LE(_epinsize), 0u
+  uint8_t _reserved2[6];
+  uint16_t bcdUSB488;
 
-#define USBTMC_BULK_DESCRIPTORS_LEN (7u+7u)
-
-/* optional interrupt endpoint */ \
-// _int_pollingInterval : for LS/FS, expressed in frames (1ms each). 16 may be a good number?
-#define USBTMC_INT_DESCRIPTOR(_ep_interrupt, _ep_interrupt_size, _int_pollingInterval ) \
-7, TUSB_DESC_ENDPOINT, _ep_interrupt, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(_ep_interrupt_size), 0x16
-
-#define USBTMC_INT_DESCRIPTOR_LEN (7u)
+  struct {
+    uint8_t is488_2 :1;
+    uint8_t supportsREN_GTL_LLO :1;
+    uint8_t supportsTrigger :1;
+  } bmIntfcCapabilities488;
+  struct {
+    uint8_t SCPI :1;
+    uint8_t SR1 :1;
+    uint8_t RL1 :1;
+    uint8_t DT1 :1;
+  } bmDevCap488;
+  uint8_t _reserved3[8];
+} usbtmc_response_capabilities_488;
 
 #endif
 

@@ -454,33 +454,46 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 
       TU_VERIFY(drvid < USBD_CLASS_DRIVER_COUNT);
 
-      switch ( p_request->bRequest )
-      {
-        case TUSB_REQ_GET_INTERFACE:
-        {
-          // TODO not support alternate interface yet
-          uint8_t alternate = 0;
-          tud_control_xfer(rhport, p_request, &alternate, 1);
-        }
+      switch( p_request->bmRequestType_bit.type) {
+      case TUSB_REQ_TYPE_STANDARD:
+        switch ( p_request->bRequest )
+         {
+           case TUSB_REQ_GET_INTERFACE:
+           {
+             // TODO not support alternate interface yet
+             uint8_t alternate = 0;
+             tud_control_xfer(rhport, p_request, &alternate, 1);
+           }
+           break;
+
+           case TUSB_REQ_SET_INTERFACE:
+           {
+             uint8_t alternate = (uint8_t) p_request->wValue;
+
+             // TODO not support alternate interface yet
+             TU_ASSERT(alternate == 0);
+
+             tud_control_status(rhport, p_request);
+           }
+           break;
+
+           default:
+             // forward to class driver
+             // stall control endpoint if driver return false
+             usbd_control_set_complete_callback(usbd_class_drivers[drvid].control_complete);
+             TU_VERIFY(usbd_class_drivers[drvid].control_request(rhport, p_request));
+           break;
+         }
         break;
 
-        case TUSB_REQ_SET_INTERFACE:
-        {
-          uint8_t alternate = (uint8_t) p_request->wValue;
-
-          // TODO not support alternate interface yet
-          TU_ASSERT(alternate == 0);
-
-          tud_control_status(rhport, p_request);
-        }
-        break;
-
-        default:
-          // forward to class driver
-          // stall control endpoint if driver return false
+        case TUSB_REQ_TYPE_CLASS:
           usbd_control_set_complete_callback(usbd_class_drivers[drvid].control_complete);
-          TU_ASSERT(usbd_class_drivers[drvid].control_request(rhport, p_request));
-        break;
+          TU_VERIFY(usbd_class_drivers[drvid].control_request(rhport, p_request));
+          break;
+
+        case TUSB_REQ_TYPE_VENDOR:
+        default:
+          TU_VERIFY(false);
       }
     }
     break;

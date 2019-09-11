@@ -12,12 +12,15 @@
 #include "usbtmc.h"
 #include "usbtmc_device.h"
 #include "device/dcd.h"
+#include "device/usbd.h"
 
 typedef struct {
   uint8_t itf_id;
   uint8_t ep_bulk_in;
   uint8_t ep_bulk_out;
   uint8_t ep_int_in;
+  uint8_t ep_bulk_in_buf[64];
+  uint8_t ep_bulk_out_buf[64];
 } usbtmc_interface_state_t;
 
 static usbtmc_interface_state_t usbtmc_state = {
@@ -91,12 +94,13 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
   {
     TU_ASSERT(usbtmc_state.ep_int_in != 0);
   }
+  //TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf,64));
+ // TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, 64));
 
 
 /*
 
   // Prepare for incoming data
-  TU_ASSERT( usbd_edpt_xfer(rhport, p_midi->ep_out, p_midi->epout_buf, CFG_TUD_MIDI_EPSIZE), false);
 
   return true;
 */
@@ -112,23 +116,46 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
   return true;
 }
 bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * request) {
-  TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
 
-  switch(request->bReqest)
+  // We only handle class requests.
+  if(request->bmRequestType_bit.type != TUSB_REQ_TYPE_CLASS)
+    return false;
+
+  switch(request->bRequest)
   {
-  // USBTMC Required Requests
+  // USBTMC required requests
   case USBTMC_bREQUEST_INITIATE_ABORT_BULK_OUT:
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_OUT_STATUS:
   case USBTMC_bREQUEST_INITIATE_ABORT_BULK_IN:
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_IN_STATUS:
   case USBTMC_bREQUEST_INITIATE_CLEAR:
   case USBTMC_bREQUEST_CHECK_CLEAR_STATUS:
+    break;
+
   case USBTMC_bREQUEST_GET_CAPABILITIES:
+    TU_VERIFY(request->bmRequestType == 0xA1);
+    TU_VERIFY(request->wValue == 0x0000);
+
+#if (USBTMC_CFG_ENABLE_488)
+    usbtmc_response_capabilities_488 const* capRsp =
+        usbtmcd_app_get_capabilities(request);
+#else
+    usbtmc_response_capabilities const* capRsp =
+        usbtmcd_app_get_capabilities(request);
+#endif
+
+    tud_control_xfer(rhport, request, &capRsp, sizeof(capRsp));
     break;
   // USBTMC Optional Requests
   case USBTMC_bREQUEST_INDICATOR_PULSE: // Optional
     break;
-    // USB488 requests
+    // USB488 required requests
+  case USBTMC488_bREQUEST_READ_STATUS_BYTE:
+    // USB488 optional requests
+  case USBTMC488_bREQUEST_REN_CONTROL:
+  case USBTMC488_bREQUEST_GO_TO_LOCAL:
+  case USBTMC488_bREQUEST_LOCAL_LOCKOUT:
+    break;
   default:
     TU_VERIFY(false);
   }
