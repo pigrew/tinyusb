@@ -223,7 +223,6 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
       uint8_t invInvTag = (uint8_t)~(msg->header.bTagInverse);
       TU_VERIFY(msg->header.bTag == invInvTag);
       TU_VERIFY(msg->header.bTag != 0x00);
-      TU_VERIFY(usbtmc_state.lastTag != msg->header.bTag);
       usbtmc_state.lastTag = msg->header.bTag;
 
       switch(msg->header.MsgID) {
@@ -287,7 +286,7 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 }
 
 bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * request) {
-
+  uint8_t bTag;
   // We only handle class requests.
   if(request->bmRequestType_bit.type != TUSB_REQ_TYPE_CLASS)
     return false;
@@ -310,7 +309,6 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     TU_VERIFY(request->wIndex == usbtmc_state.itf_id);
     TU_VERIFY(request->wLength == sizeof(usbtmcd_app_capabilities));
     return tud_control_xfer(rhport, request, (void*)&usbtmcd_app_capabilities, sizeof(usbtmcd_app_capabilities));
-    break;
 
   // USBTMC Optional Requests
   case USBTMC_bREQUEST_INDICATOR_PULSE: // Optional
@@ -318,10 +316,21 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     return false;
     break;
 
+#if (USBTMC_CFG_ENABLE_488)
     // USB488 required requests
   case USBTMC488_bREQUEST_READ_STATUS_BYTE:
-    TU_VERIFY(false);
-    break;
+
+    bTag = request->wValue & 0x007F;
+    TU_VERIFY(request->bmRequestType == 0xA1);
+    TU_VERIFY((request->wValue & (~0x007F)) == 0x0000); // Other bits are required to be zero
+    TU_VERIFY(bTag >= 0x02 && bTag <= 127);
+    TU_VERIFY(request->wIndex == usbtmc_state.itf_id);
+    TU_VERIFY(request->wLength == 0x0003);
+    usbtmc_read_stb_rsp_488_t rsp;
+    rsp.bTag = bTag;
+    TU_VERIFY(usbtmcd_app_get_stb_rsp(rhport, &rsp));
+    return tud_control_xfer(rhport, request, (void*)&rsp, sizeof(rsp));
+
     // USB488 optional requests
   case USBTMC488_bREQUEST_REN_CONTROL:
   case USBTMC488_bREQUEST_GO_TO_LOCAL:
@@ -329,6 +338,8 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     TU_VERIFY(false);
     return false;
     break;
+#endif
+
   default:
     TU_VERIFY(false);
   }

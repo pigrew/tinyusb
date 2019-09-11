@@ -23,9 +23,9 @@
  */
 
 #if (USBTMC_CFG_ENABLE_488)
-extern usbtmc_response_capabilities_488 const usbtmcd_app_capabilities;
+extern usbtmc_response_capabilities_488_t const usbtmcd_app_capabilities;
 #else
-extern usbtmc_response_capabilities const usbtmcd_app_capabilities;
+extern usbtmc_response_capabilities_t const usbtmcd_app_capabilities;
 #endif
 
 bool usbtmcd_app_msgBulkOut_start(usbtmc_msg_request_dev_dep_out const * msgHeader);
@@ -36,6 +36,10 @@ bool usbtmcd_app_msg_data(void *data, size_t len, bool transfer_complete);
 bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in const * request);
 
 bool usbtmcd_app_msgBulkIn_complete(uint8_t rhport);
+
+#if (USBTMC_CFG_ENABLE_488)
+bool usbtmcd_app_get_stb_rsp(uint8_t rhport, usbtmc_read_stb_rsp_488_t *rsp);
+#endif
 
 /*******************************************
  * Called from app

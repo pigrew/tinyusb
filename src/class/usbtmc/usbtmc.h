@@ -170,42 +170,57 @@ typedef struct TU_ATTR_PACKED {
   } bmDevCapabilities;
   uint8_t _reserved2[6];
   uint8_t _reserved3[12];
-} usbtmc_response_capabilities;
+} usbtmc_response_capabilities_t;
 
-TU_VERIFY_STATIC(sizeof(usbtmc_response_capabilities) == 0x18, "struct wrong length");
+TU_VERIFY_STATIC(sizeof(usbtmc_response_capabilities_t) == 0x18, "struct wrong length");
 
-typedef struct TU_ATTR_PACKED {
+typedef struct TU_ATTR_PACKED
+{
   uint8_t USBTMC_status;                 ///< usbtmc_status_enum
   uint8_t _reserved;
   uint16_t bcdUSBTMC;                    ///< USBTMC_VERSION
 
-  struct {
+  struct
+  {
     uint8_t listenOnly :1;
     uint8_t talkOnly :1;
     uint8_t supportsIndicatorPulse :1;
   } bmIntfcCapabilities;
 
-  struct {
+  struct
+  {
     uint8_t canEndBulkInOnTermChar :1;
   } bmDevCapabilities;
 
   uint8_t _reserved2[6];
   uint16_t bcdUSB488;
 
-  struct {
+  struct
+  {
     uint8_t is488_2 :1;
     uint8_t supportsREN_GTL_LLO :1;
     uint8_t supportsTrigger :1;
   } bmIntfcCapabilities488;
-  struct {
+
+  struct
+  {
     uint8_t SCPI :1;
     uint8_t SR1 :1;
     uint8_t RL1 :1;
     uint8_t DT1 :1;
   } bmDevCapabilities488;
   uint8_t _reserved3[8];
-} usbtmc_response_capabilities_488;
+} usbtmc_response_capabilities_488_t;
 
-TU_VERIFY_STATIC(sizeof(usbtmc_response_capabilities) == 0x18, "struct wrong length");
+TU_VERIFY_STATIC(sizeof(usbtmc_response_capabilities_488_t) == 0x18, "struct wrong length");
+
+typedef struct TU_ATTR_PACKED
+{
+  uint8_t USBTMC_status;
+  uint8_t bTag;
+  uint8_t statusByte;
+} usbtmc_read_stb_rsp_488_t;
+
+TU_VERIFY_STATIC(sizeof(usbtmc_read_stb_rsp_488_t) == 3u, "struct wrong length");
 #endif
 
