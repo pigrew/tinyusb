@@ -11,12 +11,18 @@
 // You must ensure thread safety in your own app.
 
 
-// LIMITATIONS:
+//Limitations (not planned to be implemented):
 // "vendor-specific" commands are not handled
-// USBTMC 3.2.2 error conditions not followed
 
+// TODO:
+// USBTMC 3.2.2 error conditions not strictly followed
+// No local lock-out, REN, or GTL.
+// Cannot issue clear.
 // No "capabilities" supported
-
+// Interrupt-IN endpoint
+// 488 MsgID=Trigger
+// Clear message available status byte at the correct time? (488 4.3.1.3)
+// Split transfers
 
 #if (TUSB_OPT_DEVICE_ENABLED && CFG_TUD_USBTMC)
 
@@ -282,11 +288,15 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
     }
     return true;
   }
+  else if (ep_addr == usbtmc_state.ep_int_in) {
+    // Good?
+    return true;
+  }
   return false;
 }
 
 bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * request) {
-  uint8_t bTag;
+  uint bTag;
   // We only handle class requests.
   if(request->bmRequestType_bit.type != TUSB_REQ_TYPE_CLASS)
     return false;
@@ -328,7 +338,22 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     TU_VERIFY(request->wLength == 0x0003);
     usbtmc_read_stb_rsp_488_t rsp;
     rsp.bTag = bTag;
-    TU_VERIFY(usbtmcd_app_get_stb_rsp(rhport, &rsp));
+    if(usbtmc_state.ep_int_in != 0)
+    {
+      rsp.USBTMC_status = USBTMC_STATUS_SUCCESS;
+      rsp.statusByte = 0x00; // Use interrupt endpoint, instead.
+      usbtmc_read_stb_interrupt_488_t intMsg = {
+          .bNotify1 = {
+              .bTag = bTag,
+              .one = 1u
+          },
+          .StatusByte = 0x12
+      };
+      usbd_edpt_xfer(rhport, usbtmc_state.ep_int_in, (void*)&intMsg,sizeof(intMsg));
+
+    } else {
+      TU_VERIFY(usbtmcd_app_get_stb_rsp(rhport, &rsp));
+    }
     return tud_control_xfer(rhport, request, (void*)&rsp, sizeof(rsp));
 
     // USB488 optional requests

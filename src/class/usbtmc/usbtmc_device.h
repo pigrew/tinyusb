@@ -39,6 +39,8 @@ bool usbtmcd_app_msgBulkIn_complete(uint8_t rhport);
 
 #if (USBTMC_CFG_ENABLE_488)
 bool usbtmcd_app_get_stb_rsp(uint8_t rhport, usbtmc_read_stb_rsp_488_t *rsp);
+
+//TU_ATTR_WEAK bool usbtmcd_app_go_to_local(uint8_t rhport);
 #endif
 
 /*******************************************
