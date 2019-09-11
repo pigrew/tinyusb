@@ -110,11 +110,14 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 void usbtmcd_reset(uint8_t rhport)
 {
   // FIXME: Do endpoints need to be closed here?
+  (void)rhport;
 }
 bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
+  (void)rhport;
   return true;
 }
+
 bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * request) {
 
   // We only handle class requests.
@@ -130,39 +133,43 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_IN_STATUS:
   case USBTMC_bREQUEST_INITIATE_CLEAR:
   case USBTMC_bREQUEST_CHECK_CLEAR_STATUS:
+    TU_VERIFY(false);
     break;
 
   case USBTMC_bREQUEST_GET_CAPABILITIES:
     TU_VERIFY(request->bmRequestType == 0xA1);
     TU_VERIFY(request->wValue == 0x0000);
-
-#if (USBTMC_CFG_ENABLE_488)
-    usbtmc_response_capabilities_488 const* capRsp =
-        usbtmcd_app_get_capabilities(request);
-#else
-    usbtmc_response_capabilities const* capRsp =
-        usbtmcd_app_get_capabilities(request);
-#endif
-
-    tud_control_xfer(rhport, request, &capRsp, sizeof(capRsp));
+    TU_VERIFY(request->wIndex == usbtmc_state.itf_id);
+    TU_VERIFY(request->wLength == sizeof(usbtmcd_app_capabilities));
+    return tud_control_xfer(rhport, request, (void*)&usbtmcd_app_capabilities, sizeof(usbtmcd_app_capabilities));
     break;
+
   // USBTMC Optional Requests
   case USBTMC_bREQUEST_INDICATOR_PULSE: // Optional
+    return false;
     break;
+
     // USB488 required requests
   case USBTMC488_bREQUEST_READ_STATUS_BYTE:
+    TU_VERIFY(false);
+    break;
     // USB488 optional requests
   case USBTMC488_bREQUEST_REN_CONTROL:
   case USBTMC488_bREQUEST_GO_TO_LOCAL:
   case USBTMC488_bREQUEST_LOCAL_LOCKOUT:
+    return false;
     break;
   default:
     TU_VERIFY(false);
   }
-  TU_ASSERT(false);
-  return true;
+  return false;
 }
+
 bool usbtmcd_control_complete(uint8_t rhport, tusb_control_request_t const * request) {
+  (void)rhport;
+  //------------- Class Specific Request -------------//
+  TU_VERIFY (request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
+
   return true;
 }
 

@@ -151,9 +151,14 @@ typedef struct TU_ATTR_PACKED {
     uint8_t talkOnly :1;
     uint8_t supportsIndicatorPulse :1;
   } bmIntfcCapabilities;
+  struct {
+    uint8_t canEndBulkInOnTermChar :1;
+  } bmDevCapabilities;
   uint8_t _reserved2[6];
-  uint8_t _reserved3;
+  uint8_t _reserved3[12];
 } usbtmc_response_capabilities;
+
+TU_VERIFY_STATIC(sizeof(usbtmc_response_capabilities) == 0x18, "struct wrong length");
 
 typedef struct TU_ATTR_PACKED {
   uint8_t USBTMC_status;                 ///< usbtmc_status_enum
@@ -165,6 +170,10 @@ typedef struct TU_ATTR_PACKED {
     uint8_t talkOnly :1;
     uint8_t supportsIndicatorPulse :1;
   } bmIntfcCapabilities;
+
+  struct {
+    uint8_t canEndBulkInOnTermChar :1;
+  } bmDevCapabilities;
 
   uint8_t _reserved2[6];
   uint16_t bcdUSB488;
@@ -179,9 +188,10 @@ typedef struct TU_ATTR_PACKED {
     uint8_t SR1 :1;
     uint8_t RL1 :1;
     uint8_t DT1 :1;
-  } bmDevCap488;
+  } bmDevCapabilities488;
   uint8_t _reserved3[8];
 } usbtmc_response_capabilities_488;
 
+TU_VERIFY_STATIC(sizeof(usbtmc_response_capabilities) == 0x18, "struct wrong length");
 #endif
 

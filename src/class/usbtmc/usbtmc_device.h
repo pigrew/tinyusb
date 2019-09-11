@@ -19,9 +19,9 @@
  */
 
 #if (USBTMC_CFG_ENABLE_488)
-usbtmc_response_capabilities_488 const* usbtmcd_app_get_capabilities(tusb_control_request_t const * request);
+extern usbtmc_response_capabilities_488 const usbtmcd_app_capabilities;
 #else
-usbtmc_response_capabilities const * usbtmcd_app_get_capabilities(tusb_control_request_t const * request);
+extern usbtmc_response_capabilities const usbtmcd_app_capabilities;
 #endif
 
 
