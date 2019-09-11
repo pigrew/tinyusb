@@ -14,6 +14,10 @@
 #define USBTMC_CFG_ENABLE_488 (1)
 #endif
 
+// USB spec says that full-speed must be 8,16,32, or 64.
+// However, this driver implementation requires it to be >=32
+#define USBTMCD_MAX_PACKET_SIZE (64u)
+
 /***********************************************
  *  Functions to be implemeted by the class implementation
  */
@@ -24,6 +28,9 @@ extern usbtmc_response_capabilities_488 const usbtmcd_app_capabilities;
 extern usbtmc_response_capabilities const usbtmcd_app_capabilities;
 #endif
 
+bool usbtmcd_app_msgBulkOut_start(usbtmc_msg_request_dev_dep_out const * msgHeader);
+
+bool usbtmcd_app_msg_data(void *data, size_t len, bool atEnd);
 
 /* "callbacks" from USB device core */
 
@@ -53,11 +60,11 @@ void usbtmcd_init(void);
 #define USBTMC_IF_DESCRIPTOR_LEN 9u
 
 // bulk-out Size must be a multiple of 4 bytes
-#define USBTMC_BULK_DESCRIPTORS(_epout,_epoutsize, _epin, _epinsize) \
+#define USBTMC_BULK_DESCRIPTORS(_epout, _epin) \
 /* Endpoint Out */ \
-7, TUSB_DESC_ENDPOINT, _epout, TUSB_XFER_BULK, U16_TO_U8S_LE(_epoutsize), 0u, \
+7, TUSB_DESC_ENDPOINT, _epout, TUSB_XFER_BULK, U16_TO_U8S_LE(USBTMCD_MAX_PACKET_SIZE), 0u, \
 /* Endpoint In */ \
-7, TUSB_DESC_ENDPOINT, _epin, TUSB_XFER_BULK, U16_TO_U8S_LE(_epinsize), 0u
+7, TUSB_DESC_ENDPOINT, _epin, TUSB_XFER_BULK, U16_TO_U8S_LE(USBTMCD_MAX_PACKET_SIZE), 0u
 
 #define USBTMC_BULK_DESCRIPTORS_LEN (7u+7u)
 
