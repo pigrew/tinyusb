@@ -129,7 +129,7 @@ bool usbd_control_xfer_cb (uint8_t rhport, uint8_t ep_addr, xfer_result_t result
   }
 
   _control_state.total_transferred += xferred_bytes;
-  _control_state.buffer += xferred_bytes;
+  _control_state.buffer = ((uint8_t*)_control_state.buffer) +  xferred_bytes;
 
   if ( (_control_state.requested_len == _control_state.total_transferred) || xferred_bytes < CFG_TUD_ENDOINT0_SIZE )
   {
@@ -147,7 +147,8 @@ bool usbd_control_xfer_cb (uint8_t rhport, uint8_t ep_addr, xfer_result_t result
     {
       // Send status
       TU_ASSERT( tud_control_status(rhport, &_control_state.request) );
-    }else
+    }
+    else
     {
       // Stall both IN and OUT control endpoint
       dcd_edpt_stall(rhport, EDPT_CTRL_OUT);
