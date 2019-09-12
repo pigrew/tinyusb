@@ -79,6 +79,29 @@
     #define tu_htons(u16)  (u16)
     #define tu_ntohs(u16)  (u16)
   #endif
+#elif defined(__TI_COMPILER_VERSION__)
+  #define TU_ATTR_ALIGNED(Bytes)        __attribute__ ((aligned(Bytes)))
+  #define TU_ATTR_SECTION(sec_name)     __attribute__ ((section(#sec_name)))
+  #define TU_ATTR_PACKED                __attribute__ ((packed))
+  #define TU_ATTR_PREPACKED
+  #define TU_ATTR_WEAK                  __attribute__ ((weak))
+  #define TU_ATTR_DEPRECATED(mess)      __attribute__ ((deprecated(mess))) // warn if function with this attribute is used
+  #define TU_ATTR_UNUSED                __attribute__ ((unused))           // Function/Variable is meant to be possibly unused
+
+  // Endian conversion use well-known host to network (big endian) naming
+  #if defined(__little_endian__)
+    #define tu_htonl(u32)  __builtin_bswap32(u32)
+    #define tu_ntohl(u32)  __builtin_bswap32(u32)
+
+    #define tu_htons(u16)  __builtin_bswap16(u16)
+    #define tu_ntohs(u16)  __builtin_bswap16(u16)
+  #else
+    #define tu_htonl(u32)  (u32)
+    #define tu_ntohl(u32)  (u32)
+
+    #define tu_htons(u16)  (u16)
+    #define tu_ntohs(u16)  (u16)
+  #endif
 #else
   #error "Compiler attribute porting are required"
 #endif
