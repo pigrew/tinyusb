@@ -310,14 +310,14 @@ void tud_task (void)
           if ( 0 == tu_edpt_number(ep_addr) )
           {
             // control transfer DATA stage callback
-            usbd_control_xfer_cb(event.rhport, ep_addr, event.xfer_complete.result, event.xfer_complete.len);
+            usbd_control_xfer_cb(event.rhport, ep_addr, (xfer_result_t)event.xfer_complete.result, event.xfer_complete.len);
           }
           else
           {
             uint8_t const drv_id = _usbd_dev.ep2drv[tu_edpt_number(ep_addr)][tu_edpt_dir(ep_addr)];
             TU_ASSERT(drv_id < USBD_CLASS_DRIVER_COUNT,);
 
-            usbd_class_drivers[drv_id].xfer_cb(event.rhport, ep_addr, event.xfer_complete.result, event.xfer_complete.len);
+            usbd_class_drivers[drv_id].xfer_cb(event.rhport, ep_addr, (xfer_result_t)event.xfer_complete.result, event.xfer_complete.len);
           }
         }
       break;
