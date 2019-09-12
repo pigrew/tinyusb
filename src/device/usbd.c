@@ -315,7 +315,7 @@ void tud_task (void)
           else
           {
             uint8_t const drv_id = _usbd_dev.ep2drv[tu_edpt_number(ep_addr)][tu_edpt_dir(ep_addr)];
-            TU_ASSERT(drv_id < USBD_CLASS_DRIVER_COUNT,);
+            TU_ASSERT(drv_id < USBD_CLASS_DRIVER_COUNT);
 
             usbd_class_drivers[drv_id].xfer_cb(event.rhport, ep_addr, (xfer_result_t)event.xfer_complete.result, event.xfer_complete.len);
           }
@@ -729,7 +729,7 @@ void dcd_event_handler(dcd_event_t const * event, bool in_isr)
       if ( (0 == tu_edpt_number(event->xfer_complete.ep_addr)) && (event->xfer_complete.len == 0) ) break;
 
       osal_queue_send(_usbd_q, event, in_isr);
-      TU_ASSERT(event->xfer_complete.result == XFER_RESULT_SUCCESS,);
+      TU_ASSERT(event->xfer_complete.result == XFER_RESULT_SUCCESS);
     break;
 
     // Not an DCD event, just a convenient way to defer ISR function should we need to
