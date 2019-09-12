@@ -9,14 +9,11 @@ CFLAGS += \
   -nostdlib -nostartfiles \
   -DCFG_TUSB_MCU=OPT_MCU_STM32H7
 
-# The -Wno-error=sign-compare line is required due to STM32H7xx_HAL_Driver.
-CFLAGS += -Wno-error=sign-compare
-
 ST_HAL_DRIVER = hw/mcu/st/st_driver/STM32H7xx_HAL_Driver
 ST_CMSIS = hw/mcu/st/st_driver/CMSIS/Device/ST/STM32H7xx
 
 # All source paths should be relative to the top level.
-LD_FILE = hw/bsp/stm32h743nucleo/STM32H743ZITx_FLASH.ld
+LD_FILE = hw/bsp/$(BOARD)/STM32H743ZITx_FLASH.ld
 
 SRC_C += \
 	$(ST_CMSIS)/Source/Templates/system_stm32h7xx.c \
@@ -39,3 +36,10 @@ INC += \
 # For TinyUSB port source
 VENDOR = st
 CHIP_FAMILY = synopsys
+
+# Path to STM32 Cube Programmer CLI, should be added into system path
+STM32Prog = STM32_Programmer_CLI
+
+# flash target using on-board stlink
+flash: $(BUILD)/$(BOARD)-firmware.elf
+	$(STM32Prog) --connect port=swd --write $< --go
