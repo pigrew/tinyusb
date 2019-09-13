@@ -365,12 +365,16 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
   usbd_control_set_complete_callback(NULL);
 
   // First pre-compute which driver is in charge of the target (and do bounds checking)
-  uint8_t itf = 0xFFu;
-  uint8_t ep = 0xFFu;
+
+  // FIXME: Should itf and ep be 16-bit since the request's value and index are 16-bit?
+  // If so, these need byte swapping on big-endian platforms.
+  uint16_t itf = 0xFFu;
+  uint16_t ep = 0xFFu;
   uint8_t drvid = INVALID_DRV_TOKEN;
   uint8_t const recipient = p_request->bmRequestType_bit.recipient;
 
-  switch( recipient ) {
+  switch( recipient )
+  {
   case TUSB_REQ_RCPT_DEVICE:
     // No action necessary
     break;
@@ -398,7 +402,8 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
     return false;
   }
 
-  if(drvid != INVALID_DRV_TOKEN) {
+  if(drvid != INVALID_DRV_TOKEN)
+  {
     TU_VERIFY(drvid < USBD_CLASS_DRIVER_COUNT);
   }
 
@@ -411,6 +416,7 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
     {
       usbd_control_set_complete_callback(tud_vendor_control_complete_cb);
     }
+
     return tud_vendor_control_request_cb(rhport, p_request);
   }
 
@@ -493,11 +499,6 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
     //------------- Class/Interface Specific Request -------------//
     case TUSB_REQ_RCPT_INTERFACE:
     {
-      uint8_t const itf = tu_u16_low(p_request->wIndex);
-      TU_VERIFY(itf < TU_ARRAY_SZIE(_usbd_dev.itf2drv));
-
-      uint8_t const drvid = _usbd_dev.itf2drv[itf];
-      TU_VERIFY(drvid < USBD_CLASS_DRIVER_COUNT);
 
       if (p_request->bmRequestType_bit.type == TUSB_REQ_TYPE_STANDARD)
       {
@@ -552,32 +553,32 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
       }
 
       if( TUSB_REQ_TYPE_STANDARD == p_request->bmRequestType_bit.type ) {
-        switch ( p_request->bRequest )
+      switch ( p_request->bRequest )
+      {
+        case TUSB_REQ_GET_STATUS:
         {
-          case TUSB_REQ_GET_STATUS:
+          uint16_t status = usbd_edpt_stalled(rhport, tu_u16_low(p_request->wIndex)) ? 0x0001 : 0x0000;
+          tud_control_xfer(rhport, p_request, &status, 2);
+        }
+        break;
+
+        case TUSB_REQ_CLEAR_FEATURE:
+          if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
           {
-            uint16_t status = usbd_edpt_stalled(rhport, tu_u16_low(p_request->wIndex)) ? 0x0001 : 0x0000;
-            tud_control_xfer(rhport, p_request, &status, 2);
+            usbd_edpt_clear_stall(rhport, tu_u16_low(p_request->wIndex));
           }
-          break;
+          tud_control_status(rhport, p_request);
+        break;
 
-          case TUSB_REQ_CLEAR_FEATURE:
-            if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
-            {
-              usbd_edpt_clear_stall(rhport, tu_u16_low(p_request->wIndex));
-            }
-            tud_control_status(rhport, p_request);
-          break;
+        case TUSB_REQ_SET_FEATURE:
+          if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
+          {
+            usbd_edpt_stall(rhport, tu_u16_low(p_request->wIndex));
+          }
+          tud_control_status(rhport, p_request);
+        break;
 
-          case TUSB_REQ_SET_FEATURE:
-            if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
-            {
-              usbd_edpt_stall(rhport, tu_u16_low(p_request->wIndex));
-            }
-            tud_control_status(rhport, p_request);
-          break;
-
-          // Unknown/Unsupported request
+        // Unknown/Unsupported request
           default:
             // returns false if both USBD and the class driver can't handle the request
             return drvHandled;
@@ -588,7 +589,7 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
         // stall if the class driver didn't handle it
         return drvHandled;
       }
-      break;
+    break;
     }
     // Unknown recipient
     default: TU_BREAKPOINT(); return false;
