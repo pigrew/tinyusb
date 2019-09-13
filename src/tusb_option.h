@@ -60,6 +60,8 @@
 #define OPT_MCU_STM32F7       305 ///< ST STM32F7
 #define OPT_MCU_STM32H7       306 ///< ST STM32H7
 
+#define OPT_TI_TM4C123        400
+
 
 /** @} */
 
