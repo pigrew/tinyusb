@@ -364,12 +364,53 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 {
   usbd_control_set_complete_callback(NULL);
 
+  // First pre-compute which driver is in charge of the target (and do bounds checking)
+  uint8_t itf = 0xFFu;
+  uint8_t ep = 0xFFu;
+  uint8_t drvid = INVALID_DRV_TOKEN;
+  uint8_t const recipient = p_request->bmRequestType_bit.recipient;
+
+  switch( recipient ) {
+  case TUSB_REQ_RCPT_DEVICE:
+    // No action necessary
+    break;
+
+  case TUSB_REQ_RCPT_INTERFACE:
+    itf = tu_u16_low(p_request->wIndex);
+    TU_VERIFY(itf < ARRAY_LENGTH(_usbd_dev.itf2drv));
+    drvid = _usbd_dev.itf2drv[itf];
+    TU_VERIFY(drvid != INVALID_DRV_TOKEN);
+    break;
+
+  case TUSB_REQ_RCPT_ENDPOINT:
+    ep = tu_u16_low(p_request->wIndex);
+    if(tu_edpt_number(ep) == 0u)
+    {
+      break; // EP0 is handled by everyone. :)
+    }
+
+    TU_VERIFY(tu_edpt_number(p_request->wIndex) < ARRAY_LENGTH(_usbd_dev.ep2drv));
+    drvid = _usbd_dev.ep2drv[tu_edpt_number(ep)][tu_edpt_dir(ep)];
+    TU_VERIFY(drvid != INVALID_DRV_TOKEN);
+    break;
+
+  default:
+    return false;
+  }
+
+  if(drvid != INVALID_DRV_TOKEN) {
+    TU_VERIFY(drvid < USBD_CLASS_DRIVER_COUNT);
+  }
+
   // Vendor request
   if ( p_request->bmRequestType_bit.type == TUSB_REQ_TYPE_VENDOR )
   {
     TU_VERIFY(tud_vendor_control_request_cb);
 
-    if (tud_vendor_control_complete_cb) usbd_control_set_complete_callback(tud_vendor_control_complete_cb);
+    if (tud_vendor_control_complete_cb)
+    {
+      usbd_control_set_complete_callback(tud_vendor_control_complete_cb);
+    }
     return tud_vendor_control_request_cb(rhport, p_request);
   }
 
@@ -502,39 +543,53 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 
     //------------- Endpoint Request -------------//
     case TUSB_REQ_RCPT_ENDPOINT:
-      // Non standard request is not supported
-      TU_VERIFY( TUSB_REQ_TYPE_STANDARD == p_request->bmRequestType_bit.type );
+    {
+      bool drvHandled = false;
+      if(drvid != INVALID_DRV_TOKEN) {
+        usbd_control_set_complete_callback(usbd_class_drivers[drvid].control_complete);
 
-      switch ( p_request->bRequest )
-      {
-        case TUSB_REQ_GET_STATUS:
-        {
-          uint16_t status = usbd_edpt_stalled(rhport, tu_u16_low(p_request->wIndex)) ? 0x0001 : 0x0000;
-          tud_control_xfer(rhport, p_request, &status, 2);
-        }
-        break;
-
-        case TUSB_REQ_CLEAR_FEATURE:
-          if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
-          {
-            usbd_edpt_clear_stall(rhport, tu_u16_low(p_request->wIndex));
-          }
-          tud_control_status(rhport, p_request);
-        break;
-
-        case TUSB_REQ_SET_FEATURE:
-          if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
-          {
-            usbd_edpt_stall(rhport, tu_u16_low(p_request->wIndex));
-          }
-          tud_control_status(rhport, p_request);
-        break;
-
-        // Unknown/Unsupported request
-        default: TU_BREAKPOINT(); return false;
+        drvHandled = usbd_class_drivers[drvid].control_request(rhport, p_request);
       }
-    break;
 
+      if( TUSB_REQ_TYPE_STANDARD == p_request->bmRequestType_bit.type ) {
+        switch ( p_request->bRequest )
+        {
+          case TUSB_REQ_GET_STATUS:
+          {
+            uint16_t status = usbd_edpt_stalled(rhport, tu_u16_low(p_request->wIndex)) ? 0x0001 : 0x0000;
+            tud_control_xfer(rhport, p_request, &status, 2);
+          }
+          break;
+
+          case TUSB_REQ_CLEAR_FEATURE:
+            if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
+            {
+              usbd_edpt_clear_stall(rhport, tu_u16_low(p_request->wIndex));
+            }
+            tud_control_status(rhport, p_request);
+          break;
+
+          case TUSB_REQ_SET_FEATURE:
+            if ( TUSB_REQ_FEATURE_EDPT_HALT == p_request->wValue )
+            {
+              usbd_edpt_stall(rhport, tu_u16_low(p_request->wIndex));
+            }
+            tud_control_status(rhport, p_request);
+          break;
+
+          // Unknown/Unsupported request
+          default:
+            // returns false if both USBD and the class driver can't handle the request
+            return drvHandled;
+        }
+      }
+      else // (type != standard)
+      {
+        // stall if the class driver didn't handle it
+        return drvHandled;
+      }
+      break;
+    }
     // Unknown recipient
     default: TU_BREAKPOINT(); return false;
   }
