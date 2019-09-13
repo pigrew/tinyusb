@@ -446,6 +446,13 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
      **************************************************/
     case TUSB_REQ_TYPE_STANDARD:
 
+      // First give class drive an oppertunity to handle things
+      // If it returns true, then we don't need to continue.
+      if(drvid != INVALID_DRV_TOKEN) {
+        if(usbd_class_drivers[drvid].control_request(rhport, p_request))
+          return true;
+      }
+
       // Requests are in order of bRequest value
       switch ( p_request->bRequest )
       {
