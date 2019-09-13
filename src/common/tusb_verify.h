@@ -147,7 +147,7 @@
  * - 2 arg : return error if failed
  *------------------------------------------------------------------*/
 #define ASSERT_1ARGS(_cond)            TU_VERIFY_DEFINE((_cond), _MESS_FAILED(); TU_BREAKPOINT(), false)
-#define ASSERT_2ARGS(_cond, _ret)      TU_VERIFY_DEFINE((_cond), _MESS_FAILED(); TU_BREAKPOINT(),( _ret))
+#define ASSERT_2ARGS(_cond, _ret)      TU_VERIFY_DEFINE((_cond), _MESS_FAILED(); TU_BREAKPOINT(), _ret)
 
 #define TU_ASSERT(...)             GET_3RD_ARG(__VA_ARGS__, ASSERT_2ARGS, ASSERT_1ARGS,UNUSED)(__VA_ARGS__)
 
