@@ -96,8 +96,8 @@
   #define TU_ATTR_DEPRECATED(mess)      __attribute__ ((deprecated(mess))) // warn if function with this attribute is used
   #define TU_ATTR_UNUSED                __attribute__ ((unused))           // Function/Variable is meant to be possibly unused
 
-  // Endian conversion use well-known host to network (big endian) naming
-  #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  // __BYTE_ORDER is defined in the TI ARM compiler, but not MSP430 (which is little endian)
+  #if ((__BYTE_ORDER__) == (__ORDER_LITTLE_ENDIAN__)) || defined(__MSP430__)
     #define TU_BYTE_ORDER TU_LITTLE_ENDIAN
   #else
     #define TU_BYTE_ORDER TU_BIG_ENDIAN
@@ -113,7 +113,7 @@
     return __builtin_bswap32(u32);
   }
 #else
-  #error "Compiler attribute porting are required"
+  #error "Compiler attribute porting is required"
 #endif
 
 #if (TU_BYTE_ORDER == TU_LITTLE_ENDIAN)
