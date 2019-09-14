@@ -7,9 +7,9 @@
 #board=stm32f070rbnucleo
 
 #st syn
-board=stm32f407disco
+#board=stm32f407disco
 #st fsdev
-#board=stm32f303disco
+board=stm32f303disco
 
 example=all_classes
 

@@ -3,22 +3,7 @@ typedef unsigned char bool;
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 
-typedef struct
-{
-           uint8_t* buffer    ; ///< buffer pointer
-           uint16_t depth     ; ///< max items
-           uint16_t item_size ; ///< size of each item
-           bool overwritable  ;
-
-  volatile uint16_t count     ; ///< number of items in queue
-  volatile uint16_t wr_idx    ; ///< write pointer
-  volatile uint16_t rd_idx    ; ///< read pointer
-
-#if defined(CFG_FIFO_MUTEX)
-  tu_fifo_mutex_t mutex;
-#endif
-
-} tu_fifo_t;
+typedef struct {} tu_fifo_t;
 
 typedef struct
 {
@@ -28,6 +13,15 @@ typedef struct
 
 typedef osal_queue_def_t* osal_queue_t;
 
+static void tu_assert(bool cond){
+  if (!cond) {
+    __coverity_panic__();
+  }
+}
+
+static void COV_BRK(void) {
+    __coverity_panic__();
+}
 
 bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
 {

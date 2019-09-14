@@ -275,6 +275,8 @@ bool midid_open(uint8_t rhport, tusb_desc_interface_t const * p_interface_desc, 
     }
   }
 
+  TU_ASSERT(p_midi != NULL);
+
   p_midi->itf_num  = p_interface_desc->bInterfaceNumber;
 
   uint8_t const * p_desc = tu_desc_next( (uint8_t const *) p_interface_desc );

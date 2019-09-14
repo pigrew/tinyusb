@@ -66,14 +66,11 @@
     if ( (*ARM_CM_DHCSR) & 1UL ) __asm("BKPT #0\n"); /* Only halt mcu if debugger is attached */            \
   } while(0)
 #elif defined(__COVERITY__ ) || true
+// Coverity wants a function, not a macro.
 
-// Make coverity really upset if we call assert.
-static inline void assert(int condition) {
-   while(!condition) {
-
-   }
- }
-#define TU_BREAKPOINT() do {assert(0); } while (0)
+static void COV_BRK(void) {
+}
+#define TU_BREAKPOINT() do {COV_BRK(0); } while (0)
 
 #else
   #define TU_BREAKPOINT()
@@ -173,6 +170,21 @@ static inline void assert(int condition) {
 /*------------------------------------------------------------------*/
 /* ASSERT HDLR
  *------------------------------------------------------------------*/
+#if defined(__COVERITY__ ) || true
+
+#undef ASSERT_1ARGS
+#undef ASSERT_2ARGS
+#define ASSERT_1ARGS(_cond)            do {tu_assert(_cond);} while(0)
+#define ASSERT_2ARGS(_cond, _ret)      do {tu_assert(_cond);} while(0)
+
+static void tu_assert(bool cond) TU_ATTR_UNUSED;
+static void tu_assert(bool cond)
+{
+  if(cond)
+    TU_BREAKPOINT();
+}
+
+#endif
 
 #ifdef __cplusplus
  }

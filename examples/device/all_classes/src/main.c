@@ -70,7 +70,7 @@
 #endif
 
 void OTG_FS_IRQHandler(void);
-
+void USB_HP_CAN_TX_IRQHandler(void);
 
 uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
@@ -96,7 +96,7 @@ int main(void)
 	// know that interrupt handler is not dead code?
 
 #if ((CFG_TUSB_MCU) == (OPT_MCU_STM32F3)) && defined(DCD_ST_FSDEV)
-	USB_HP_CAN_TX_IRQHandler();
+  USB_HP_CAN_TX_IRQHandler();
 #elif defined(DCD_SYN)
 	OTG_FS_IRQHandler();
 #else
