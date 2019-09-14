@@ -77,6 +77,7 @@
 #define CFG_TUD_HID             0
 #define CFG_TUD_MIDI            0
 #define CFG_TUD_VENDOR          0
+#define CFG_TUD_USBTMC          0
 
 // MSC Buffer size of Device Mass storage
 #define CFG_TUD_MSC_BUFSIZE     512
