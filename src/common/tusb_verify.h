@@ -65,6 +65,16 @@
     volatile uint32_t* ARM_CM_DHCSR =  ((volatile uint32_t*) 0xE000EDF0UL); /* Cortex M CoreDebug->DHCSR */ \
     if ( (*ARM_CM_DHCSR) & 1UL ) __asm("BKPT #0\n"); /* Only halt mcu if debugger is attached */            \
   } while(0)
+#elif defined(__COVERITY__ ) || true
+
+// Make coverity really upset if we call assert.
+static inline void assert(int condition) {
+   while(!condition) {
+
+   }
+ }
+#define TU_BREAKPOINT() do {assert(0); } while (0)
+
 #else
   #define TU_BREAKPOINT()
 #endif
