@@ -49,9 +49,7 @@
  *           bugs. This is used to discover bugs in the code more
  *           quickly. One example would be adding assertions in library
  *           function calls to confirm a function's (untainted)
- *           parameters are valid. While the check is always included
- *           in the built code, it's a good idea for the conditions to
- *           have no side effects.
+ *           parameters are valid.
  *
  * 
  * The difference in behaviour is that ASSERT triggers a breakpoint while
@@ -92,7 +90,7 @@
     if ( (*ARM_CM_DHCSR) & 1UL ) __asm("BKPT #0\n"); /* Only halt mcu if debugger is attached */            \
   } while(0)
 #else
-  #define TU_BREAKPOINT() do {__asm("BKPT #0\n");} while (1)
+  #define TU_BREAKPOINT()
 #endif
 
 /*------------------------------------------------------------------*/
@@ -128,8 +126,8 @@
  * - TU_VERIFY_1ARGS : return false if failed
  * - TU_VERIFY_2ARGS : return provided value if failed
  *------------------------------------------------------------------*/
-#define TU_VERIFY_1ARGS(_cond)                         TU_VERIFY_DEFINE((_cond), , false)
-#define TU_VERIFY_2ARGS(_cond, _ret)                   TU_VERIFY_DEFINE((_cond), , _ret)
+#define TU_VERIFY_1ARGS(_cond)                         TU_VERIFY_DEFINE(_cond, , false)
+#define TU_VERIFY_2ARGS(_cond, _ret)                   TU_VERIFY_DEFINE(_cond, , _ret)
 
 #define TU_VERIFY(...)                   GET_3RD_ARG(__VA_ARGS__, TU_VERIFY_2ARGS, TU_VERIFY_1ARGS, UNUSED)(__VA_ARGS__)
 
@@ -160,8 +158,8 @@
  * - TU_VERIFY_ERR_HDLR_2ARGS : execute handler, return status if failed
  * - TU_VERIFY_ERR_HDLR_3ARGS : execute handler, return provided error if failed
  *------------------------------------------------------------------*/
-#define TU_VERIFY_ERR_HDLR_2ARGS(_error, _handler)        TU_VERIFY_ERR_DEF2((_error), (_handler))
-#define TU_VERIFY_ERR_HDLR_3ARGS(_error, _handler, _ret)  TU_VERIFY_ERR_DEF3((_error),( _handler),( _ret))
+#define TU_VERIFY_ERR_HDLR_2ARGS(_error, _handler)        TU_VERIFY_ERR_DEF2(_error, _handler)
+#define TU_VERIFY_ERR_HDLR_3ARGS(_error, _handler, _ret)  TU_VERIFY_ERR_DEF3(_error, _handler, _ret)
 
 #define TU_VERIFY_ERR_HDLR(...)       GET_4TH_ARG(__VA_ARGS__, TU_VERIFY_ERR_HDLR_3ARGS, TU_VERIFY_ERR_HDLR_2ARGS,UNUSED)(__VA_ARGS__)
 
@@ -172,8 +170,8 @@
  * - 1 arg : return false if failed
  * - 2 arg : return error if failed
  *------------------------------------------------------------------*/
-#define ASSERT_1ARGS(_cond)            TU_VERIFY_DEFINE((_cond), _MESS_FAILED(); TU_BREAKPOINT(), false)
-#define ASSERT_2ARGS(_cond, _ret)      TU_VERIFY_DEFINE((_cond), _MESS_FAILED(); TU_BREAKPOINT(), _ret)
+#define ASSERT_1ARGS(_cond)            TU_VERIFY_DEFINE(_cond, _MESS_FAILED(); TU_BREAKPOINT(), false)
+#define ASSERT_2ARGS(_cond, _ret)      TU_VERIFY_DEFINE(_cond, _MESS_FAILED(); TU_BREAKPOINT(), _ret)
 
 #define TU_ASSERT(...)             GET_3RD_ARG(__VA_ARGS__, ASSERT_2ARGS, ASSERT_1ARGS,UNUSED)(__VA_ARGS__)
 
