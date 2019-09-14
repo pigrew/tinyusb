@@ -40,6 +40,37 @@
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
 
+#define STM32L4_SYNOPSYS    (                                                  \
+    defined (STM32L475xx) || defined (STM32L476xx) ||                          \
+    defined (STM32L485xx) || defined (STM32L486xx) || defined (STM32L496xx) || \
+    defined (STM32L4R5xx) || defined (STM32L4R7xx) || defined (STM32L4R9xx) || \
+    defined (STM32L4S5xx) || defined (STM32L4S7xx) || defined (STM32L4S9xx)    \
+)
+
+#if TUSB_OPT_DEVICE_ENABLED && \
+    ( CFG_TUSB_MCU == OPT_MCU_STM32F2 || \
+      CFG_TUSB_MCU == OPT_MCU_STM32F4 || \
+      CFG_TUSB_MCU == OPT_MCU_STM32F7 || \
+      CFG_TUSB_MCU == OPT_MCU_STM32H7 || \
+      (CFG_TUSB_MCU == OPT_MCU_STM32L4 && STM32L4_SYNOPSYS) \
+    )
+#define DCD_SYN
+#endif
+
+#if (TUSB_OPT_DEVICE_ENABLED) && ( \
+      ((CFG_TUSB_MCU) == OPT_MCU_STM32F0) || \
+      (((CFG_TUSB_MCU) == OPT_MCU_STM32F1) && ( \
+          defined(stm32f102x6) || defined(stm32f102xb) || \
+          defined(stm32f103x6) || defined(stm32f103xb) || \
+          defined(stm32f103xe) || defined(stm32f103xg) \
+      )) || \
+      ((CFG_TUSB_MCU) == OPT_MCU_STM32F3) \
+    )
+#define DCD_ST_FSDEV
+#endif
+
+void OTG_FS_IRQHandler(void);
+
 
 uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
@@ -61,7 +92,16 @@ int main(void)
 	midi_task();
 	cdc_task();
     webserial_task();
-	
+	// Trigger a fake interrupt; not sure if the static analyzer needs this to
+	// know that interrupt handler is not dead code?
+
+#if ((CFG_TUSB_MCU) == (OPT_MCU_STM32F3)) && defined(DCD_ST_FSDEV)
+	USB_HP_CAN_TX_IRQHandler();
+#elif defined(DCD_SYN)
+	OTG_FS_IRQHandler();
+#else
+	#error need to determine the interrupt handler....
+#endif
   }
 
   return 0;

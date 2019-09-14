@@ -8,11 +8,14 @@
 
 #st syn
 board=stm32f407disco
+#st fsdev
+#board=stm32f303disco
+
 example=all_classes
 
 #example=webusb_serial
 #board=lpcxpresso54114
-rm -rf cov-build
+rm -rf cov-int
 rm -rf tusb-${example}-${board}.xz
 
 make -j4 -C examples/device/$example BOARD=$board clean
