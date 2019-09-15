@@ -116,7 +116,7 @@ static inline uint16_t tu_fifo_count(tu_fifo_t* f)
 
 static inline uint16_t tu_fifo_remaining(tu_fifo_t* f)
 {
-  return f->depth - f->count;
+  return (uint16_t)(f->depth - f->count);
 }
 
 static inline uint16_t tu_fifo_depth(tu_fifo_t* f)

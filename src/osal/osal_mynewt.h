@@ -27,6 +27,8 @@
 #ifndef OSAL_MYNEWT_H_
 #define OSAL_MYNEWT_H_
 
+#include <stdbool.h>
+#include <stddef.h>
 #include "os/os.h"
 
 #ifdef __cplusplus

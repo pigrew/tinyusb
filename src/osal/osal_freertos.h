@@ -28,6 +28,8 @@
 #define _TUSB_OSAL_FREERTOS_H_
 
 // FreeRTOS Headers
+#include <stdbool.h>
+#include <stddef.h>
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "queue.h"

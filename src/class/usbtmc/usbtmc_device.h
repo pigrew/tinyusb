@@ -4,12 +4,39 @@
  *  Created on: Sep 10, 2019
  *      Author: nconrad
  */
+/*
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2019 N Conrad
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * This file is part of the TinyUSB stack.
+ */
+
 
 #ifndef CLASS_USBTMC_USBTMC_DEVICE_H_
 #define CLASS_USBTMC_USBTMC_DEVICE_H_
 
 #include "usbtmc.h"
 
+// Enable 488 mode by default
 #if !defined(USBTMC_CFG_ENABLE_488)
 #define USBTMC_CFG_ENABLE_488 (1)
 #endif
@@ -28,18 +55,25 @@ extern usbtmc_response_capabilities_488_t const usbtmcd_app_capabilities;
 extern usbtmc_response_capabilities_t const usbtmcd_app_capabilities;
 #endif
 
-bool usbtmcd_app_msgBulkOut_start(usbtmc_msg_request_dev_dep_out const * msgHeader);
-
+bool usbtmcd_app_msgBulkOut_start(uint8_t rhport, usbtmc_msg_request_dev_dep_out const * msgHeader);
 // transfer_complete does not imply that a message is complete.
-bool usbtmcd_app_msg_data(void *data, size_t len, bool transfer_complete);
+bool usbtmcd_app_msg_data(uint8_t rhport, void *data, size_t len, bool transfer_complete);
+void usmtmcd_app_bulkOut_clearFeature(uint8_t rhport); // Notice to clear and abort the pending BULK out transfer
 
 bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in const * request);
-
 bool usbtmcd_app_msgBulkIn_complete(uint8_t rhport);
+void usmtmcd_app_bulkIn_clearFeature(uint8_t rhport); // Notice to clear and abort the pending BULK out transfer
+
+bool usbtmcd_app_initiate_clear(uint8_t rhport, uint8_t *tmcResult);
+
+bool usbtmcd_app_get_clear_status(uint8_t rhport, usbtmc_get_clear_status_rsp_t *rsp);
+
+// Indicator pulse should be 0.5 to 1.0 seconds long
+TU_ATTR_WEAK bool usbtmcd_app_indicator_pluse(uint8_t rhport, tusb_control_request_t const * msg, uint8_t *tmcResult);
 
 #if (USBTMC_CFG_ENABLE_488)
-bool usbtmcd_app_get_stb_rsp(uint8_t rhport, usbtmc_read_stb_rsp_488_t *rsp);
-
+uint8_t usbtmcd_app_get_stb(uint8_t rhport, uint8_t *tmcResult);
+TU_ATTR_WEAK bool usbtmcd_app_msg_trigger(uint8_t rhport, usbtmc_msg_generic_t* msg);
 //TU_ATTR_WEAK bool usbtmcd_app_go_to_local(uint8_t rhport);
 #endif
 
@@ -70,10 +104,10 @@ void usbtmcd_init(void);
  *************************************************************/
 
 #define USBTMC_APP_CLASS    TUSB_CLASS_APPLICATION_SPECIFIC
-#define USBTMC_APP_SUBCLASS 0x03
+#define USBTMC_APP_SUBCLASS 0x03u
 
-#define USBTMC_PROTOCOL_STD    0x00
-#define USBTMC_PROTOCOL_USB488 0x01
+#define USBTMC_PROTOCOL_STD    0x00u
+#define USBTMC_PROTOCOL_USB488 0x01u
 
 //   Interface number, number of endpoints, EP string index, USB_TMC_PROTOCOL*, bulk-out endpoint ID,
 //   bulk-in endpoint ID

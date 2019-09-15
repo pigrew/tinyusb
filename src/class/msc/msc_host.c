@@ -26,6 +26,9 @@
 
 #include "tusb_option.h"
 
+typedef int make_this_translation_unit_not_empty; // Fixed pedantic GCC warnings
+
+
 #if TUSB_OPT_HOST_ENABLED & CFG_TUH_MSC
 
 //--------------------------------------------------------------------+
