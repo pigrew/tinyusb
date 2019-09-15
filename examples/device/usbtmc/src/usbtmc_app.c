@@ -65,7 +65,7 @@ usbtmcd_app_capabilities  =
 #endif
 };
 
-static const char idn[] = "TinyUSB,ModelNumber,SerialNumber,FirmwareVer\n";
+static const char idn[] = "TinyUSB,ModelNumber,SerialNumber,FirmwareVer and a bunch of other text to make it longer than a packet, perhaps?\n";
 static volatile uint8_t status;
 
 // 0=not query, 1=queried, 2=delay,set(MAV), 3=delay 4=ready?
@@ -143,14 +143,14 @@ void usbtmc_app_task_iter(void) {
     queryState = 2;
     break;
   case 2:
-    if( (board_millis() - queryDelayStart) > 1000u) {
+    if( (board_millis() - queryDelayStart) > 500u) {
       queryDelayStart = board_millis();
       queryState=3;
       status |= 0x10u; // MAV
     }
     break;
   case 3:
-    if( (board_millis() - queryDelayStart) > 1000u) {
+    if( (board_millis() - queryDelayStart) > 650u) {
       queryState = 4;
     }
     break;

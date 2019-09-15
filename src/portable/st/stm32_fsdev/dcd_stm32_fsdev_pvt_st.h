@@ -214,7 +214,9 @@ static inline void pcd_set_ep_address(USB_TypeDef * USBx,  unsigned int bEpNum, 
 
 static inline __IO uint16_t * pcd_btable_word_ptr(USB_TypeDef * USBx, size_t x)
 {
-  return &(pma[PMA_STRIDE*((((USBx)->BTABLE)>>1) + x)]);
+  size_t total_word_offset = (((USBx)->BTABLE)>>1) + x;
+  total_word_offset *= PMA_STRIDE;
+  return &(pma[total_word_offset]);
 }
 
 // Pointers to the PMA table entries (using the ARM address space)
