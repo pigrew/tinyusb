@@ -140,7 +140,8 @@ bool usbd_control_xfer_cb (uint8_t rhport, uint8_t ep_addr, xfer_result_t result
     {
       // Send status
       TU_ASSERT( tud_control_status(rhport, &_control_state.request) );
-    }else
+    }
+    else
     {
       // Stall both IN and OUT control endpoint
       dcd_edpt_stall(rhport, EDPT_CTRL_OUT);

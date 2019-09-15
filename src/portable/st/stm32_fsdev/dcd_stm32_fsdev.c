@@ -342,7 +342,7 @@ static void dcd_handle_bus_reset(void)
   dcd_edpt_open (0, &ep0IN_desc);
   newDADDR = 0u;
   USB->DADDR = USB_DADDR_EF; // Set enable flag, and leaving the device address as zero.
-  PCD_SET_EP_RX_STATUS(USB, 0, USB_EP_RX_VALID); // And start accepting SETUP on EP0
+  pcd_set_ep_rx_status(USB, 0, USB_EP_RX_VALID); // And start accepting SETUP on EP0
 }
 
 // FIXME: Defined to return uint16 so that ASSERT can be used, even though a return value is not needed.
@@ -386,7 +386,7 @@ static uint16_t dcd_ep_ctr_handler(void)
           }
           if(xfer->total_len == 0) // Probably a status message?
           {
-            PCD_CLEAR_RX_DTOG(USB,EPindex);
+            pcd_clear_rx_dtog(USB,EPindex);
           }
         }
         else
@@ -434,14 +434,14 @@ static uint16_t dcd_ep_ctr_handler(void)
           /* Process Control Data OUT status Packet*/
           if(EPindex == 0u && xfer->total_len == 0u)
           {
-             PCD_CLEAR_EP_KIND(USB,0); // Good, so allow non-zero length packets now.
+             pcd_clear_ep_kind(USB,0); // Good, so allow non-zero length packets now.
           }
           dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
 
-          PCD_SET_EP_RX_CNT(USB, EPindex, CFG_TUD_ENDPOINT0_SIZE);
+          pcd_set_ep_rx_cnt(USB, EPindex, CFG_TUD_ENDPOINT0_SIZE);
           if(EPindex == 0u && xfer->total_len == 0u)
           {
-            PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_RX_VALID);// Await next SETUP
+            pcd_set_ep_rx_status(USB, EPindex, USB_EP_RX_VALID);// Await next SETUP
           }
 
         }
@@ -483,12 +483,12 @@ static uint16_t dcd_ep_ctr_handler(void)
         {
           uint16_t remaining = (uint16_t)(xfer->total_len - xfer->queued_len);
           if(remaining >=64) {
-            PCD_SET_EP_RX_CNT(USB, EPindex,64);
+            pcd_set_ep_rx_cnt(USB, EPindex,64);
           } else {
-            PCD_SET_EP_RX_CNT(USB, EPindex,remaining);
+            pcd_set_ep_rx_cnt(USB, EPindex,remaining);
           }
 
-          PCD_SET_EP_RX_STATUS(USB, EPindex, USB_EP_RX_VALID);
+          pcd_set_ep_rx_status(USB, EPindex, USB_EP_RX_VALID);
         }
 
       } /* if((wEPVal & EP_CTR_RX) */
@@ -591,22 +591,22 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
     return false;
   }
 
-  PCD_SET_EP_ADDRESS(USB, epnum, epnum);
-  PCD_CLEAR_EP_KIND(USB,0); // Be normal, for now, instead of only accepting zero-byte packets
+  pcd_set_ep_address(USB, epnum, epnum);
+  pcd_clear_ep_kind(USB,0); // Be normal, for now, instead of only accepting zero-byte packets
 
   if(dir == TUSB_DIR_IN)
   {
     *PCD_EP_TX_ADDRESS_PTR(USB, epnum) = ep_buf_ptr;
-    PCD_SET_EP_RX_CNT(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
-    PCD_CLEAR_TX_DTOG(USB, epnum);
-    PCD_SET_EP_TX_STATUS(USB,epnum,USB_EP_TX_NAK);
+    pcd_set_ep_tx_cnt(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
+    pcd_clear_tx_dtog(USB, epnum);
+    pcd_set_ep_tx_status(USB,epnum,USB_EP_TX_NAK);
   }
   else
   {
     *PCD_EP_RX_ADDRESS_PTR(USB, epnum) = ep_buf_ptr;
-    PCD_SET_EP_RX_CNT(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
-    PCD_CLEAR_RX_DTOG(USB, epnum);
-    PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_NAK);
+    pcd_set_ep_rx_cnt(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
+    pcd_clear_rx_dtog(USB, epnum);
+    pcd_set_ep_rx_status(USB, epnum, USB_EP_RX_NAK);
   }
 
   ep_buf_ptr = (uint16_t)(ep_buf_ptr + p_endpoint_desc->wMaxPacketSize.size); // increment buffer pointer
@@ -627,8 +627,8 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
   dcd_write_packet_memory(*PCD_EP_TX_ADDRESS_PTR(USB,ep_ix), &(xfer->buffer[xfer->queued_len]), len);
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
 
-  PCD_SET_EP_TX_CNT(USB,ep_ix,len);
-  PCD_SET_EP_TX_STATUS(USB, ep_ix, USB_EP_TX_VALID);
+  pcd_set_ep_tx_cnt(USB,ep_ix,len);
+  pcd_set_ep_tx_status(USB, ep_ix, USB_EP_TX_VALID);
 }
 
 bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
@@ -651,15 +651,15 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
     if (epnum == 0 && buffer == NULL)
     {
         xfer->buffer = (uint8_t*)_setup_packet;
-        PCD_SET_EP_KIND(USB,0); // Expect a zero-byte INPUT
+        pcd_set_ep_kind(USB,0); // Expect a zero-byte INPUT
     }
     if(total_bytes > 64)
     {
-      PCD_SET_EP_RX_CNT(USB,epnum,64);
+      pcd_set_ep_rx_cnt(USB,epnum,64);
     } else {
-      PCD_SET_EP_RX_CNT(USB,epnum,total_bytes);
+      pcd_set_ep_rx_cnt(USB,epnum,total_bytes);
     }
-    PCD_SET_EP_RX_STATUS(USB, epnum, USB_EP_RX_VALID);
+    pcd_set_ep_rx_status(USB, epnum, USB_EP_RX_VALID);
   }
   else // IN
   {
@@ -673,14 +673,14 @@ void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
   (void)rhport;
 
   if (ep_addr == 0) { // CTRL EP0 (OUT for setup)
-    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_STALL);
+    pcd_set_ep_tx_status(USB,ep_addr, USB_EP_TX_STALL);
   }
 
   if (ep_addr & 0x80) { // IN
     ep_addr &= 0x7F;
-    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_STALL);
+    pcd_set_ep_tx_status(USB,ep_addr, USB_EP_TX_STALL);
   } else { // OUT
-    PCD_SET_EP_RX_STATUS(USB,ep_addr, USB_EP_RX_STALL);
+    pcd_set_ep_rx_status(USB,ep_addr, USB_EP_RX_STALL);
   }
 }
 
@@ -689,24 +689,24 @@ void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr)
   (void)rhport;
   if (ep_addr == 0)
   {
-    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_NAK);
+    pcd_set_ep_tx_status(USB,ep_addr, USB_EP_TX_NAK);
   }
 
   if (ep_addr & 0x80)
   { // IN
     ep_addr &= 0x7F;
 
-    PCD_SET_EP_TX_STATUS(USB,ep_addr, USB_EP_TX_NAK);
+    pcd_set_ep_tx_status(USB,ep_addr, USB_EP_TX_NAK);
 
     /* Reset to DATA0 if clearing stall condition. */
-    PCD_CLEAR_TX_DTOG(USB,ep_addr);
+    pcd_clear_tx_dtog(USB,ep_addr);
   }
   else
   { // OUT
     /* Reset to DATA0 if clearing stall condition. */
-    PCD_CLEAR_RX_DTOG(USB,ep_addr);
+    pcd_clear_rx_dtog(USB,ep_addr);
 
-    PCD_SET_EP_RX_STATUS(USB,ep_addr, USB_EP_RX_VALID);
+    pcd_set_ep_rx_status(USB,ep_addr, USB_EP_RX_VALID);
   }
 }
 
