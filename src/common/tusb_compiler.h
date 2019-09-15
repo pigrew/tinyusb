@@ -80,12 +80,10 @@
     return __builtin_bswap16(u16);
   }
 
-  static inline uint16_t tu_bswap32(uint16_t u32)
+  static inline uint32_t tu_bswap32(uint32_t u32)
   {
     return __builtin_bswap32(u32);
   }
-
-  #define TU_BSWAP16
 
 #elif defined(__TI_COMPILER_VERSION__)
   #define TU_ATTR_ALIGNED(Bytes)        __attribute__ ((aligned(Bytes)))
@@ -108,7 +106,7 @@
     return __builtin_bswap16(u16);
   }
 
-  static inline uint16_t tu_bswap32(uint16_t u32)
+  static inline uint32_t tu_bswap32(uint32_t u32)
   {
     return __builtin_bswap32(u32);
   }

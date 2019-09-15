@@ -147,16 +147,12 @@
  * Checks, structs, defines, function definitions, etc.
  */
 
-TU_VERIFY_STATIC((MAX_EP_COUNT) <= STFSDEV_EP_COUNT,"Only 8 endpoints supported on the hardware");
+TU_VERIFY_STATIC((MAX_EP_COUNT) <= STFSDEV_EP_COUNT, "Only 8 endpoints supported on the hardware");
 
 TU_VERIFY_STATIC(((DCD_STM32_BTABLE_BASE) + (DCD_STM32_BTABLE_LENGTH))<=(PMA_LENGTH),
     "BTABLE does not fit in PMA RAM");
 
 TU_VERIFY_STATIC(((DCD_STM32_BTABLE_BASE) % 8) == 0, "BTABLE base must be aligned to 8 bytes");
-
-// Max size of a USB FS packet is 64...
-#define MAX_PACKET_SIZE 64
-
 
 // One of these for every EP IN & OUT, uses a bit of RAM....
 typedef struct
@@ -164,10 +160,20 @@ typedef struct
   uint8_t * buffer;
   uint16_t total_len;
   uint16_t queued_len;
+  uint16_t max_packet_size;
 } xfer_ctl_t;
 
-static xfer_ctl_t  xfer_status[MAX_EP_COUNT][2];
-#define XFER_CTL_BASE(_epnum, _dir) &xfer_status[_epnum][_dir]
+static xfer_ctl_t xfer_status[MAX_EP_COUNT][2];
+
+static xfer_ctl_t* xfer_ctl_ptr(unsigned int epnum, unsigned int dir)
+{
+#ifndef NDEBUG
+  TU_ASSERT(epnum < MAX_EP_COUNT);
+  TU_ASSERT(dir < 2u);
+#endif
+
+  return &xfer_status[epnum][dir];
+}
 
 static TU_ATTR_ALIGNED(4) uint32_t _setup_packet[6];
 
@@ -372,7 +378,7 @@ static uint16_t dcd_ep_ctr_handler(void)
         /* DIR = 0 implies that (EP_CTR_TX = 1) always  */
         pcd_clear_tx_ep_ctr(USB, 0);
 
-        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
+        xfer_ctl_t * xfer = xfer_ctl_ptr(EPindex,TUSB_DIR_IN);
 
         if((xfer->total_len == xfer->queued_len))
         {
@@ -399,7 +405,7 @@ static uint16_t dcd_ep_ctr_handler(void)
         /* DIR = 1 & CTR_RX       => SETUP or OUT int */
         /* DIR = 1 & (CTR_TX | CTR_RX) => 2 int pending */
 
-        xfer_ctl_t *xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
+        xfer_ctl_t *xfer = xfer_ctl_ptr(EPindex,TUSB_DIR_OUT);
 
         //ep = &hpcd->OUT_ep[0];
         wEPVal = pcd_get_endpoint(USB, EPindex);
@@ -458,7 +464,7 @@ static uint16_t dcd_ep_ctr_handler(void)
         /* clear int flag */
         pcd_clear_rx_ep_ctr(USB, EPindex);
 
-        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
+        xfer_ctl_t * xfer = xfer_ctl_ptr(EPindex,TUSB_DIR_OUT);
 
         //ep = &hpcd->OUT_ep[EPindex];
 
@@ -472,7 +478,7 @@ static uint16_t dcd_ep_ctr_handler(void)
         /*multi-packet on the NON control OUT endpoint */
         xfer->queued_len = (uint16_t)(xfer->queued_len + count);
 
-        if ((count < 64) || (xfer->queued_len == xfer->total_len))
+        if ((count < xfer->max_packet_size) || (xfer->queued_len == xfer->total_len))
         {
           /* RX COMPLETE */
           dcd_event_xfer_complete(0, EPindex, xfer->queued_len, XFER_RESULT_SUCCESS, true);
@@ -498,7 +504,7 @@ static uint16_t dcd_ep_ctr_handler(void)
         /* clear int flag */
         pcd_clear_tx_ep_ctr(USB, EPindex);
 
-        xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
+        xfer_ctl_t * xfer = xfer_ctl_ptr(EPindex,TUSB_DIR_IN);
 
         if (xfer->queued_len  != xfer->total_len) // data remaining in transfer?
         {
@@ -566,26 +572,47 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   (void)rhport;
   uint8_t const epnum = tu_edpt_number(p_endpoint_desc->bEndpointAddress);
   uint8_t const dir   = tu_edpt_dir(p_endpoint_desc->bEndpointAddress);
-
+  const uint16_t epMaxPktSize = p_endpoint_desc->wMaxPacketSize.size;
   // Isochronous not supported (yet), and some other driver assumptions.
 #ifndef NDEBUG
   TU_ASSERT(p_endpoint_desc->bmAttributes.xfer != TUSB_XFER_ISOCHRONOUS);
-  TU_ASSERT(p_endpoint_desc->wMaxPacketSize.size <= MAX_PACKET_SIZE);
   TU_ASSERT(epnum < MAX_EP_COUNT);
-  TU_ASSERT((p_endpoint_desc->wMaxPacketSize.size %2) == 0);
 #endif
  // __IO uint16_t * const epreg = &(EPREG(epnum));
 
   // Set type
   switch(p_endpoint_desc->bmAttributes.xfer) {
   case TUSB_XFER_CONTROL:
-    pcd_set_eptype(USB, epnum, USB_EP_CONTROL); break;
-  case TUSB_XFER_ISOCHRONOUS:
+    pcd_set_eptype(USB, epnum, USB_EP_CONTROL);
+#ifndef NDEBUG
+    // USB 2.0 spec on FS packets, 5.5.3 (control)
+    TU_ASSERT((epMaxPktSize == 8) ||(epMaxPktSize == 16) || (epMaxPktSize == 32) ||(epMaxPktSize == 64));
+#endif
+    break;
+#if (0)
+  case TUSB_XFER_ISOCHRONOUS: // Not yet supported
+    // USB 2.0 spec on FS packets, 5.6.3 (control);
+    TU_ASSERT(epMaxPktSize <= 1023);
     pcd_set_eptype(USB, epnum, USB_EP_ISOCHRONOUS); break;
+    break;
+#endif
+
   case TUSB_XFER_BULK:
-    pcd_set_eptype(USB, epnum, USB_EP_BULK); break;
+    pcd_set_eptype(USB, epnum, USB_EP_BULK);
+#ifndef NDEBUG
+    // USB 2.0 spec on FS packets, 5.8.3 (bulk)
+    TU_ASSERT((epMaxPktSize == 8) ||(epMaxPktSize == 16) ||(epMaxPktSize == 32) ||(epMaxPktSize == 64));
+#endif
+    break;
+
   case TUSB_XFER_INTERRUPT:
-    pcd_set_eptype(USB, epnum, USB_EP_INTERRUPT); break;
+    pcd_set_eptype(USB, epnum, USB_EP_INTERRUPT);
+#ifndef NDEBUG
+    // USB 2.0 spec on FS packets, 5.5.3 (control); interestingly 0 is allowed.
+    TU_ASSERT(epMaxPktSize <= 64);
+#endif
+    break;
+
   default:
     TU_ASSERT(false);
     return false;
@@ -609,6 +636,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
     pcd_set_ep_rx_status(USB, epnum, USB_EP_RX_NAK);
   }
 
+  xfer_ctl_ptr(epnum, dir)->max_packet_size = epMaxPktSize;
   ep_buf_ptr = (uint16_t)(ep_buf_ptr + p_endpoint_desc->wMaxPacketSize.size); // increment buffer pointer
 
   return true;
@@ -620,9 +648,9 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
 {
   uint16_t len = (uint16_t)(xfer->total_len - xfer->queued_len);
 
-  if(len > 64u) // max packet size for FS transfer
+  if(len > xfer->max_packet_size) // max packet size for FS transfer
   {
-    len = 64u;
+    len = xfer->max_packet_size;
   }
   dcd_write_packet_memory(*pcd_ep_tx_address_ptr(USB,ep_ix), &(xfer->buffer[xfer->queued_len]), len);
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
@@ -638,7 +666,7 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   uint8_t const epnum = tu_edpt_number(ep_addr);
   uint8_t const dir   = tu_edpt_dir(ep_addr);
 
-  xfer_ctl_t * xfer = XFER_CTL_BASE(epnum,dir);
+  xfer_ctl_t * xfer = xfer_ctl_ptr(epnum,dir);
 
   xfer->buffer = buffer;
   xfer->total_len = total_bytes;
@@ -653,9 +681,9 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
         xfer->buffer = (uint8_t*)_setup_packet;
         pcd_set_ep_kind(USB,0); // Expect a zero-byte INPUT
     }
-    if(total_bytes > 64)
+    if(total_bytes > xfer->max_packet_size)
     {
-      pcd_set_ep_rx_cnt(USB,epnum,64);
+      pcd_set_ep_rx_cnt(USB,epnum,xfer->max_packet_size);
     } else {
       pcd_set_ep_rx_cnt(USB,epnum,total_bytes);
     }
