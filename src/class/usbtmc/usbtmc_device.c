@@ -126,7 +126,7 @@ bool usbtmcd_transmit_dev_msg_data(
 
   // Copy in the header
   memcpy(usbtmc_state.ep_bulk_in_buf, hdr, sizeof(*hdr));
-  uint packetLen = sizeof(*hdr);
+  size_t packetLen = sizeof(*hdr);
   // Single-packet transfer
   if((packetLen + hdr->TransferSize) <= USBTMCD_MAX_PACKET_SIZE)
   {
@@ -363,7 +363,7 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
     }
     else // short packet
     {
-      uint packetLen = usbtmc_state.transfer_size_remaining;
+      size_t packetLen = usbtmc_state.transfer_size_remaining;
       memcpy(usbtmc_state.ep_bulk_in_buf, usbtmc_state.devInBuffer, usbtmc_state.transfer_size_remaining);
       while((packetLen % 4) != 0)
       {
@@ -387,7 +387,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
   uint8_t tmcStatusCode = USBTMC_STATUS_FAILED;
 #if (USBTMC_CFG_ENABLE_488)
-  ushort bTag;
+  uint8_t bTag;
 #endif
 
   if((request->bmRequestType_bit.type == TUSB_REQ_TYPE_STANDARD) &&
