@@ -389,6 +389,23 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 #if (USBTMC_CFG_ENABLE_488)
   ushort bTag;
 #endif
+
+  if((request->bmRequestType_bit.type == TUSB_REQ_TYPE_STANDARD) &&
+      (request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_ENDPOINT) &&
+      (request->bRequest == TUSB_REQ_CLEAR_FEATURE) &&
+      (request->wValue == TUSB_REQ_FEATURE_EDPT_HALT))
+  {
+    if((request->wIndex) == usbtmc_state.ep_bulk_out)
+    {
+      usmtmcd_app_bulkOut_clearFeature(rhport);
+    }
+    else if ((request->wIndex) == usbtmc_state.ep_bulk_in)
+    {
+      usmtmcd_app_bulkIn_clearFeature(rhport);
+    }
+    return false; // We want USBD core to handle sending the status response, and clear the stall condition
+  }
+
   // We only handle class requests, IN direction.
   // (for now)
   if(request->bmRequestType_bit.type != TUSB_REQ_TYPE_CLASS)
@@ -409,7 +426,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
       TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
       TU_VERIFY(request->wLength == 1u);
       tmcStatusCode = USBTMC_STATUS_FAILED;
-      usbd_edpt_xfer(rhport, usbtmc_state.ep_int_in, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
+      usbd_edpt_xfer(rhport, 0u, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
       return true;
     }
 
@@ -421,7 +438,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
       // control endpoint response shown in Table 31, and clear all input buffers and output buffers.
       usbd_edpt_stall(rhport, usbtmc_state.ep_bulk_out);
       TU_VERIFY(usbtmcd_app_initiate_clear(rhport, &tmcStatusCode));
-      TU_VERIFY(usbd_edpt_xfer(rhport, usbtmc_state.ep_int_in, (void*)&tmcStatusCode,sizeof(tmcStatusCode)));
+      TU_VERIFY(tud_control_xfer(rhport, request, (void*)&tmcStatusCode,sizeof(tmcStatusCode)));
       return true;
     }
 
@@ -432,7 +449,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
       TU_VERIFY(request->wLength == sizeof(clearStatusRsp));
       TU_VERIFY(usbtmcd_app_get_clear_status(rhport, &clearStatusRsp));
 
-      TU_VERIFY(usbd_edpt_xfer(rhport, usbtmc_state.ep_int_in, (void*)&clearStatusRsp,sizeof(clearStatusRsp)));
+      TU_VERIFY(tud_control_xfer(rhport, request, (void*)&clearStatusRsp,sizeof(clearStatusRsp)));
       return true;
     }
 
@@ -503,6 +520,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
   default:
     TU_VERIFY(false);
+    return false;
   }
   TU_VERIFY(false);
 }

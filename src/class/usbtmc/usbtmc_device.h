@@ -56,13 +56,13 @@ extern usbtmc_response_capabilities_t const usbtmcd_app_capabilities;
 #endif
 
 bool usbtmcd_app_msgBulkOut_start(uint8_t rhport, usbtmc_msg_request_dev_dep_out const * msgHeader);
-
 // transfer_complete does not imply that a message is complete.
 bool usbtmcd_app_msg_data(uint8_t rhport, void *data, size_t len, bool transfer_complete);
+void usmtmcd_app_bulkOut_clearFeature(uint8_t rhport); // Notice to clear and abort the pending BULK out transfer
 
 bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in const * request);
-
 bool usbtmcd_app_msgBulkIn_complete(uint8_t rhport);
+void usmtmcd_app_bulkIn_clearFeature(uint8_t rhport); // Notice to clear and abort the pending BULK out transfer
 
 bool usbtmcd_app_initiate_clear(uint8_t rhport, uint8_t *tmcResult);
 

@@ -15,3 +15,5 @@ latex
 test_old/
 tests_obsolete/
 _build
+cov-int
+/tools/tusb-cppcheck-build-dir

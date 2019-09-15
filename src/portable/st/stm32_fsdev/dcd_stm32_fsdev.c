@@ -381,7 +381,7 @@ static uint16_t dcd_ep_ctr_handler(void)
           {
             // Delayed setting of the DADDR after the 0-len DATA packet acking the request is sent.
             reg16_clear_bits(&USB->DADDR, USB_DADDR_ADD);
-            USB->DADDR |= (uint16_t)newDADDR; // leave the enable bit set
+            USB->DADDR = (uint16_t)(USB->DADDR | newDADDR); // leave the enable bit set
             newDADDR = 0;
           }
           if(xfer->total_len == 0) // Probably a status message?
@@ -587,6 +587,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
     PCD_SET_EPTYPE(USB, epnum, USB_EP_INTERRUPT); break;
   default:
     TU_ASSERT(false);
+    return false;
   }
 
   PCD_SET_EP_ADDRESS(USB, epnum, epnum);
