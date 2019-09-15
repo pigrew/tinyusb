@@ -488,8 +488,8 @@ static uint16_t dcd_ep_ctr_handler(void)
         else
         {
           uint16_t remaining = (uint16_t)(xfer->total_len - xfer->queued_len);
-          if(remaining >=64) {
-            pcd_set_ep_rx_cnt(USB, EPindex,64);
+          if(remaining > xfer->max_packet_size) {
+            pcd_set_ep_rx_cnt(USB, EPindex, xfer->max_packet_size);
           } else {
             pcd_set_ep_rx_cnt(USB, EPindex,remaining);
           }
