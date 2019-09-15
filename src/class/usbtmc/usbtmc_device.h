@@ -104,10 +104,10 @@ void usbtmcd_init(void);
  *************************************************************/
 
 #define USBTMC_APP_CLASS    TUSB_CLASS_APPLICATION_SPECIFIC
-#define USBTMC_APP_SUBCLASS 0x03
+#define USBTMC_APP_SUBCLASS 0x03u
 
-#define USBTMC_PROTOCOL_STD    0x00
-#define USBTMC_PROTOCOL_USB488 0x01
+#define USBTMC_PROTOCOL_STD    0x00u
+#define USBTMC_PROTOCOL_USB488 0x01u
 
 //   Interface number, number of endpoints, EP string index, USB_TMC_PROTOCOL*, bulk-out endpoint ID,
 //   bulk-in endpoint ID

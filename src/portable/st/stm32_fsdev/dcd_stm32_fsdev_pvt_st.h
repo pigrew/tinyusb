@@ -170,38 +170,30 @@ static inline unsigned int pcd_get_ep_rx_cnt(USB_TypeDef * USBx, unsigned int bE
   * @param  wNBlocks no. of Blocks.
   * @retval None
   */
-#define PCD_CALC_BLK32(dwReg,wCount,wNBlocks) {\
-    (wNBlocks) = (uint32_t)((wCount) >> 5U);\
-    if(((wCount) & 0x1fU) == 0U)\
-    {                                                  \
-      (wNBlocks)--;\
-    }                                                  \
-    *pdwReg = (uint16_t)((uint16_t)((wNBlocks) << 10U) | (uint16_t)0x8000U); \
-  }/* PCD_CALC_BLK32 */
 
-
-#define PCD_CALC_BLK2(dwReg,wCount,wNBlocks) {\
-    (wNBlocks) = (uint32_t)((wCount) >> 1U); \
-    if(((wCount) & 0x1U) != 0U)\
-    {                                                  \
-      (wNBlocks)++;\
-    }                                                  \
-    *pdwReg = (uint16_t)((wNBlocks) << 10U);\
-  }/* PCD_CALC_BLK2 */
-
-
-#define PCD_SET_EP_CNT_RX_REG(dwReg,wCount)  {\
-    uint32_t wNBlocks;\
-    if((wCount) > 62U)                                \
-    {                                                \
-      PCD_CALC_BLK32((dwReg),(wCount),wNBlocks)     \
-    }                                                \
-    else                                             \
-    {                                                \
-      PCD_CALC_BLK2((dwReg),(wCount),wNBlocks)     \
-    }                                                \
-  }/* PCD_SET_EP_CNT_RX_REG */
-
+static inline void pcd_set_ep_cnt_rx_reg(__O uint16_t * pdwReg, size_t wCount)  {
+  unsigned int wNBlocks;
+  if(wCount > 62u)
+  {
+    wNBlocks = wCount >> 5u;
+    if((wCount & 0x1fU) == 0u)
+    {
+      wNBlocks--;
+    }
+    wNBlocks = wNBlocks << 10u;
+    wNBlocks |= 0x8000u; // Mark block size as 32byte
+    *pdwReg = (uint16_t)wNBlocks;
+  }
+  else
+  {
+    wNBlocks = wCount >> 1u;
+    if((wCount & 0x1U) != 0u)
+    {
+      wNBlocks++;
+    }
+    *pdwReg = (uint16_t)((wNBlocks) << 10u);
+  }
+}
 
 
 /**
@@ -220,21 +212,29 @@ static inline void pcd_set_ep_address(USB_TypeDef * USBx,  unsigned int bEpNum, 
   pcd_set_endpoint(USBx, bEpNum,regVal);
 }
 
-#define PCD_BTABLE_WORD_PTR(USBx,x) (&(pma[PMA_STRIDE*((((USBx)->BTABLE)>>1) + x)]))
-
-// Pointers to the PMA table entries (using the ARM address space)
-#define PCD_EP_TX_ADDRESS_PTR(USBx, bEpNum) (PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 0u))
-
-static inline __IO uint16_t* pcd_ep_tx_cnt_ptr(USB_TypeDef * USBx, unsigned int bEpNum)
+static inline __IO uint16_t * pcd_btable_word_ptr(USB_TypeDef * USBx, size_t x)
 {
-  return (__IO uint16_t*)PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 1u);
+  return &(pma[PMA_STRIDE*((((USBx)->BTABLE)>>1) + x)]);
 }
 
-#define PCD_EP_RX_ADDRESS_PTR(USBx, bEpNum) (PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 2u))
+// Pointers to the PMA table entries (using the ARM address space)
+static inline __IO uint16_t* pcd_ep_tx_address_ptr(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  return pcd_btable_word_ptr(USBx,(bEpNum)*4u + 0u);
+}
+static inline __IO uint16_t* pcd_ep_tx_cnt_ptr(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  return pcd_btable_word_ptr(USBx,(bEpNum)*4u + 1u);
+}
+
+static inline __IO uint16_t* pcd_ep_rx_address_ptr(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  return  pcd_btable_word_ptr(USBx,(bEpNum)*4u + 2u);
+}
 
 static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, unsigned int bEpNum)
 {
-  return (__IO uint16_t*)PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 3u);
+  return pcd_btable_word_ptr(USBx,(bEpNum)*4u + 3u);
 }
 
 static inline void pcd_set_ep_tx_cnt(USB_TypeDef * USBx,  unsigned int bEpNum, unsigned int wCount)
@@ -245,7 +245,7 @@ static inline void pcd_set_ep_tx_cnt(USB_TypeDef * USBx,  unsigned int bEpNum, u
 static inline void pcd_set_ep_rx_cnt(USB_TypeDef * USBx,  unsigned int bEpNum, unsigned int wCount)
 {
   __IO uint16_t *pdwReg = pcd_ep_rx_cnt_ptr((USBx),(bEpNum));
-  PCD_SET_EP_CNT_RX_REG((pdwReg), (wCount));
+  pcd_set_ep_cnt_rx_reg(pdwReg, wCount);
 }
 
 /**
@@ -255,21 +255,24 @@ static inline void pcd_set_ep_rx_cnt(USB_TypeDef * USBx,  unsigned int bEpNum, u
   * @param  wState new state
   * @retval None
   */
-#define pcd_set_ep_tx_status(USBx, bEpNum, wState) { register uint16_t _wRegVal;\
-   \
-    _wRegVal = (uint32_t) (((uint32_t)(pcd_get_endpoint((USBx), (bEpNum)))) & USB_EPTX_DTOGMASK);\
-   /* toggle first bit ? */     \
-   if((USB_EPTX_DTOG1 & (wState))!= 0U)\
-   {                                                                            \
-     _wRegVal ^=(uint16_t) USB_EPTX_DTOG1;        \
-   }                                                                            \
-   /* toggle second bit ?  */         \
-   if((USB_EPTX_DTOG2 & ((uint32_t)(wState)))!= 0U)      \
-   {                                                                            \
-     _wRegVal ^=(uint16_t) USB_EPTX_DTOG2;        \
-   }                                                                            \
-   pcd_set_endpoint((USBx), (bEpNum), (((uint32_t)(_wRegVal)) | USB_EP_CTR_RX|USB_EP_CTR_TX));\
-  } /* pcd_set_ep_tx_status */
+static inline void pcd_set_ep_tx_status(USB_TypeDef * USBx,  unsigned int bEpNum, unsigned int wState)
+{
+  uint32_t regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= USB_EPTX_DTOGMASK;
+
+  /* toggle first bit ? */
+  if((USB_EPTX_DTOG1 & (wState))!= 0U)
+  {
+    regVal ^= USB_EPTX_DTOG1;
+  }
+  /* toggle second bit ?  */
+  if((USB_EPTX_DTOG2 & ((uint32_t)(wState)))!= 0U)
+  {
+    regVal ^= USB_EPTX_DTOG2;
+  }
+  regVal |= USB_EP_CTR_RX|USB_EP_CTR_TX;
+  pcd_set_endpoint(USBx, bEpNum, regVal);
+} /* pcd_set_ep_tx_status */
 
 /**
   * @brief  sets the status for rx transfer (bits STAT_TX[1:0])
@@ -278,22 +281,25 @@ static inline void pcd_set_ep_rx_cnt(USB_TypeDef * USBx,  unsigned int bEpNum, u
   * @param  wState new state
   * @retval None
   */
-#define pcd_set_ep_rx_status(USBx, bEpNum,wState) {\
-    register uint16_t _wRegVal;   \
-    \
-    _wRegVal = (uint32_t) (((uint32_t)(pcd_get_endpoint((USBx), (bEpNum)))) & USB_EPRX_DTOGMASK);\
-    /* toggle first bit ? */  \
-    if((USB_EPRX_DTOG1 & (wState))!= 0U) \
-    {                                                                             \
-      _wRegVal ^= (uint16_t) USB_EPRX_DTOG1;  \
-    }                                                                             \
-    /* toggle second bit ? */  \
-    if((USB_EPRX_DTOG2 & ((uint32_t)(wState)))!= 0U) \
-    {                                                                             \
-      _wRegVal ^= (uint16_t) USB_EPRX_DTOG2;  \
-    }                                                                             \
-    pcd_set_endpoint((USBx), (bEpNum), (((uint32_t)(_wRegVal)) | USB_EP_CTR_RX|USB_EP_CTR_TX)); \
-  } /* pcd_set_ep_rx_status */
+
+static inline void pcd_set_ep_rx_status(USB_TypeDef * USBx,  unsigned int bEpNum, unsigned int wState)
+{
+  uint32_t regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= USB_EPRX_DTOGMASK;
+
+  /* toggle first bit ? */
+  if((USB_EPRX_DTOG1 & wState)!= 0U)
+  {
+    regVal ^= USB_EPRX_DTOG1;
+  }
+  /* toggle second bit ? */
+  if((USB_EPRX_DTOG2 & wState)!= 0U)
+  {
+    regVal ^= USB_EPRX_DTOG2;
+  }
+  regVal |= USB_EP_CTR_RX|USB_EP_CTR_TX;
+  pcd_set_endpoint(USBx, bEpNum, regVal);
+} /* pcd_set_ep_rx_status */
 
 /**
   * @brief  Toggles DTOG_RX / DTOG_TX bit in the endpoint register.
@@ -301,18 +307,21 @@ static inline void pcd_set_ep_rx_cnt(USB_TypeDef * USBx,  unsigned int bEpNum, u
   * @param  bEpNum Endpoint Number.
   * @retval None
   */
-#define pcd_rx_dtog(USBx, bEpNum)    \
-    do { \
-      pcd_set_endpoint((USBx), (bEpNum), \
-                         USB_EP_CTR_RX|USB_EP_CTR_TX|USB_EP_DTOG_RX | \
-                           (((uint32_t)(pcd_get_endpoint((USBx), (bEpNum)))) & USB_EPREG_MASK)); \
-      } while (0)
+static inline void pcd_rx_dtog(USB_TypeDef * USBx,  unsigned int bEpNum)
+{
+  unsigned int regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= USB_EPREG_MASK;
+  regVal |= USB_EP_CTR_RX|USB_EP_CTR_TX|USB_EP_DTOG_RX;
+  pcd_set_endpoint(USBx, bEpNum, regVal);
+}
 
-#define pcd_tx_dtog(USBx, bEpNum)  \
-  do { \
-    pcd_set_endpoint((USBx), (bEpNum), \
-    		USB_EP_CTR_RX|USB_EP_CTR_TX|USB_EP_DTOG_TX | (((uint32_t)(pcd_get_endpoint((USBx), (bEpNum)))) & USB_EPREG_MASK)); \
-  } while (0)
+static inline void pcd_tx_dtog(USB_TypeDef * USBx,  unsigned int bEpNum)
+{
+  unsigned int regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= USB_EPREG_MASK;
+  regVal |= USB_EP_CTR_RX|USB_EP_CTR_TX|USB_EP_DTOG_TX;
+  pcd_set_endpoint(USBx, bEpNum, regVal);
+}
 
 /**
   * @brief  Clears DTOG_RX / DTOG_TX bit in the endpoint register.

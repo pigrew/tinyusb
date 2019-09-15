@@ -412,7 +412,7 @@ static uint16_t dcd_ep_ctr_handler(void)
           /* Get SETUP Packet*/
           count = pcd_get_ep_rx_cnt(USB, EPindex);
           //TU_ASSERT_ERR(count == 8);
-          dcd_read_packet_memory(userMemBuf, *PCD_EP_RX_ADDRESS_PTR(USB,EPindex), 8);
+          dcd_read_packet_memory(userMemBuf, *pcd_ep_rx_address_ptr(USB,EPindex), 8);
           /* SETUP bit kept frozen while CTR_RX = 1*/
           dcd_event_setup_received(0, (uint8_t*)userMemBuf, true);
           pcd_clear_rx_ep_ctr(USB, EPindex);
@@ -427,7 +427,7 @@ static uint16_t dcd_ep_ctr_handler(void)
 
           if (count != 0U)
           {
-            dcd_read_packet_memory(xfer->buffer, *PCD_EP_RX_ADDRESS_PTR(USB,EPindex), count);
+            dcd_read_packet_memory(xfer->buffer, *pcd_ep_rx_address_ptr(USB,EPindex), count);
             xfer->queued_len = (uint16_t)(xfer->queued_len + count);
           }
 
@@ -466,7 +466,7 @@ static uint16_t dcd_ep_ctr_handler(void)
         if (count != 0U)
         {
           dcd_read_packet_memory(&(xfer->buffer[xfer->queued_len]),
-              *PCD_EP_RX_ADDRESS_PTR(USB,EPindex), count);
+              *pcd_ep_rx_address_ptr(USB,EPindex), count);
         }
 
         /*multi-packet on the NON control OUT endpoint */
@@ -596,14 +596,14 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
 
   if(dir == TUSB_DIR_IN)
   {
-    *PCD_EP_TX_ADDRESS_PTR(USB, epnum) = ep_buf_ptr;
+    *pcd_ep_tx_address_ptr(USB, epnum) = ep_buf_ptr;
     pcd_set_ep_tx_cnt(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
     pcd_clear_tx_dtog(USB, epnum);
     pcd_set_ep_tx_status(USB,epnum,USB_EP_TX_NAK);
   }
   else
   {
-    *PCD_EP_RX_ADDRESS_PTR(USB, epnum) = ep_buf_ptr;
+    *pcd_ep_rx_address_ptr(USB, epnum) = ep_buf_ptr;
     pcd_set_ep_rx_cnt(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
     pcd_clear_rx_dtog(USB, epnum);
     pcd_set_ep_rx_status(USB, epnum, USB_EP_RX_NAK);
@@ -624,7 +624,7 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
   {
     len = 64u;
   }
-  dcd_write_packet_memory(*PCD_EP_TX_ADDRESS_PTR(USB,ep_ix), &(xfer->buffer[xfer->queued_len]), len);
+  dcd_write_packet_memory(*pcd_ep_tx_address_ptr(USB,ep_ix), &(xfer->buffer[xfer->queued_len]), len);
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
 
   pcd_set_ep_tx_cnt(USB,ep_ix,len);
