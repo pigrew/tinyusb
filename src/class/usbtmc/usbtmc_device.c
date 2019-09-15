@@ -115,14 +115,15 @@ bool usbtmcd_transmit_dev_msg_data(
     const void *data)
 {
   TU_ASSERT(usbtmc_state.state == STATE_TX_REQUESTED);
+#ifndef NDEBUG
   TU_ASSERT(hdr->TransferSize > 0u);
-
   if(hdr->bmTransferAttributes.UsingTermChar)
   {
     TU_ASSERT(usbtmcd_app_capabilities.bmDevCapabilities.canEndBulkInOnTermChar);
     TU_ASSERT(termCharRequested);
     TU_ASSERT(((uint8_t*)data)[hdr->TransferSize-1] == termChar);
   }
+#endif
 
   // Copy in the header
   memcpy(usbtmc_state.ep_bulk_in_buf, hdr, sizeof(*hdr));
@@ -155,13 +156,14 @@ bool usbtmcd_transmit_dev_msg_data(
 
 void usbtmcd_init(void)
 {
-#if USBTMC_CFG_ENABLE_488
-  if(usbtmcd_app_capabilities.bmIntfcCapabilities488.supportsTrigger)
-    TU_ASSERT(&usbtmcd_app_msg_trigger != NULL,);
+#ifndef NDEBUG
+#  if USBTMC_CFG_ENABLE_488
+    if(usbtmcd_app_capabilities.bmIntfcCapabilities488.supportsTrigger)
+      TU_ASSERT(&usbtmcd_app_msg_trigger != NULL,);
+#  endif
+    if(usbtmcd_app_capabilities.bmIntfcCapabilities.supportsIndicatorPulse)
+      TU_ASSERT(&usbtmcd_app_indicator_pluse != NULL,);
 #endif
-  if(usbtmcd_app_capabilities.bmIntfcCapabilities.supportsIndicatorPulse)
-    TU_ASSERT(&usbtmcd_app_indicator_pluse != NULL,);
-
 }
 
 bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
@@ -204,8 +206,10 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 
           break;
         case TUSB_XFER_INTERRUPT:
+#ifndef NDEBUG
           TU_ASSERT(tu_edpt_dir(ep_desc->bEndpointAddress) == TUSB_DIR_IN);
           TU_ASSERT(usbtmc_state.ep_int_in == 0);
+#endif
           usbtmc_state.ep_int_in = ep_desc->bEndpointAddress;
           break;
         default:
@@ -219,6 +223,7 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
   }
 
   // bulk endpoints are required, but interrupt IN is optional
+#ifndef NDEBUG
   TU_ASSERT(usbtmc_state.ep_bulk_in != 0);
   TU_ASSERT(usbtmc_state.ep_bulk_out != 0);
   if (itf_desc->bNumEndpoints == 2) {
@@ -228,6 +233,7 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
   {
     TU_ASSERT(usbtmc_state.ep_int_in != 0);
   }
+#endif
   TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, 64));
 
   return true;
@@ -494,11 +500,13 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
         usbtmc_read_stb_interrupt_488_t intMsg =
         {
-            .bNotify1   = (uint8_t)(0x80 | bTag),
-            .StatusByte = usbtmcd_app_get_stb(rhport, &(rsp.USBTMC_status))
+          .bNotify1 = {
+              .one = 1,
+              .bTag = bTag & 0x7Fu,
+          },
+          .StatusByte = usbtmcd_app_get_stb(rhport, &(rsp.USBTMC_status))
         };
         usbd_edpt_xfer(rhport, usbtmc_state.ep_int_in, (void*)&intMsg,sizeof(intMsg));
-
       }
       else
       {

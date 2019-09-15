@@ -93,12 +93,17 @@ const size_t PMA_STRIDE = 1u;
 // Volatile is also needed to prevent the optimizer from changing access to 32-bit (as 32-bit access is forbidden)
 static __IO uint16_t * const pma = (__IO uint16_t*)USB_PMAADDR;
 
+// prototypes
+static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, unsigned int bEpNum);
+static inline __IO uint16_t* pcd_ep_tx_cnt_ptr(USB_TypeDef * USBx, unsigned int bEpNum);
+static inline void pcd_set_endpoint(USB_TypeDef * USBx, unsigned int bEpNum, unsigned int wRegValue);
+
 
 /* SetENDPOINT */
-static inline void pcd_set_endpoint(USB_TypeDef * USBx, unsigned int bEpNum, uint16_t wRegValue)
+static inline void pcd_set_endpoint(USB_TypeDef * USBx, unsigned int bEpNum, unsigned int wRegValue)
 {
   __O uint16_t *reg = (__O uint16_t *)((&USBx->EP0R) + bEpNum*2u);
-  *reg = wRegValue;
+  *reg = (uint16_t)wRegValue;
 }
 
 /* GetENDPOINT */
@@ -107,28 +112,56 @@ static inline uint16_t pcd_get_endpoint(USB_TypeDef * USBx, unsigned int bEpNum)
   return *reg;
 }
 
-#define PCD_SET_EPTYPE(USBx, bEpNum,wType) do {pcd_set_endpoint((USBx), (bEpNum),\
-                                  (((((uint32_t)(pcd_get_endpoint((USBx), (bEpNum)))) & ((uint32_t)(USB_EP_T_MASK))) | ((uint32_t)(wType))) | USB_EP_CTR_RX | USB_EP_CTR_TX));} while (0)
-#define PCD_GET_EPTYPE(USBx, bEpNum) (((uint16_t)(pcd_get_endpoint((USBx), (bEpNum)))) & USB_EP_T_FIELD)
+static inline void pcd_set_eptype(USB_TypeDef * USBx, unsigned int bEpNum, unsigned int wType)
+{
+  unsigned int regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= (uint32_t)USB_EP_T_MASK;
+  regVal |= wType;
+  regVal |= USB_EP_CTR_RX | USB_EP_CTR_TX; // These clear on write0, so must set high
+  pcd_set_endpoint(USBx, bEpNum, regVal);
+}
 
+static inline unsigned int pcd_get_eptype(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  unsigned int regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= USB_EP_T_FIELD;
+  return regVal;
+}
 /**
   * @brief  Clears bit CTR_RX / CTR_TX in the endpoint register.
   * @param  USBx USB peripheral instance register address.
   * @param  bEpNum Endpoint Number.
   * @retval None
   */
-#define PCD_CLEAR_RX_EP_CTR(USBx, bEpNum)   do{pcd_set_endpoint((USBx), (bEpNum),\
-                                   pcd_get_endpoint((USBx), (bEpNum)) & 0x7FFFU & USB_EPREG_MASK);} while (0)
-#define PCD_CLEAR_TX_EP_CTR(USBx, bEpNum)   do{pcd_set_endpoint((USBx), (bEpNum),\
-                                   pcd_get_endpoint((USBx), (bEpNum)) & 0xFF7FU & USB_EPREG_MASK);} while (0)
+static inline void pcd_clear_rx_ep_ctr(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  unsigned int regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= 0x7FFFu & USB_EPREG_MASK;
+  pcd_set_endpoint(USBx, bEpNum, regVal);
+}
+static inline void pcd_clear_tx_ep_ctr(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  unsigned int regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= regVal & 0xFF7FU & USB_EPREG_MASK;
+  pcd_set_endpoint(USBx, bEpNum,regVal);
+}
 /**
   * @brief  gets counter of the tx buffer.
   * @param  USBx USB peripheral instance register address.
   * @param  bEpNum Endpoint Number.
   * @retval Counter value
   */
-#define PCD_GET_EP_TX_CNT(USBx, bEpNum)((uint16_t)(*PCD_EP_TX_CNT_PTR((USBx), (bEpNum))) & 0x3ffU)
-#define PCD_GET_EP_RX_CNT(USBx, bEpNum)((uint16_t)(*PCD_EP_RX_CNT_PTR((USBx), (bEpNum))) & 0x3ffU)
+static inline unsigned int pcd_get_ep_tx_cnt(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  __I uint16_t *regPtr = pcd_ep_tx_cnt_ptr(USBx, bEpNum);
+  return *regPtr & 0x3ffU;
+}
+
+static inline unsigned int pcd_get_ep_rx_cnt(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  __I uint16_t *regPtr = pcd_ep_rx_cnt_ptr(USBx, bEpNum);
+  return *regPtr & 0x3ffU;
+}
 
 /**
   * @brief  Sets counter of rx buffer with no. of blocks.
@@ -185,14 +218,23 @@ static inline uint16_t pcd_get_endpoint(USB_TypeDef * USBx, unsigned int bEpNum)
 
 // Pointers to the PMA table entries (using the ARM address space)
 #define PCD_EP_TX_ADDRESS_PTR(USBx, bEpNum) (PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 0u))
-#define PCD_EP_TX_CNT_PTR(USBx, bEpNum)     (PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 1u))
+
+static inline __IO uint16_t* pcd_ep_tx_cnt_ptr(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  return (__IO uint16_t*)PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 1u);
+}
 
 #define PCD_EP_RX_ADDRESS_PTR(USBx, bEpNum) (PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 2u))
-#define PCD_EP_RX_CNT_PTR(USBx, bEpNum)     (PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 3u))
 
-#define PCD_SET_EP_TX_CNT(USBx, bEpNum,wCount) (*PCD_EP_TX_CNT_PTR((USBx), (bEpNum)) = (wCount))
+static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  return (__IO uint16_t*)PCD_BTABLE_WORD_PTR(USBx,(bEpNum)*4u + 3u);
+}
+
+#define PCD_SET_EP_TX_CNT(USBx, bEpNum,wCount) (*pcd_ep_tx_cnt_ptr((USBx), (bEpNum)) = (wCount))
+
 #define PCD_SET_EP_RX_CNT(USBx, bEpNum,wCount) do {\
-    __IO uint16_t *pdwReg =PCD_EP_RX_CNT_PTR((USBx),(bEpNum)); \
+    __IO uint16_t *pdwReg =pcd_ep_rx_cnt_ptr((USBx),(bEpNum)); \
     PCD_SET_EP_CNT_RX_REG((pdwReg), (wCount))\
   } while(0)
 
@@ -294,13 +336,13 @@ static inline uint16_t pcd_get_endpoint(USB_TypeDef * USBx, unsigned int bEpNum)
       (USB_EP_CTR_RX|USB_EP_CTR_TX|((((uint32_t)(pcd_get_endpoint((USBx), (bEpNum)))) | USB_EP_KIND) & USB_EPREG_MASK))); \
   } while (0)
 
-#define PCD_CLEAR_EP_KIND(USBx, bEpNum) \
-  do { \
-    pcd_set_endpoint((USBx), (bEpNum), \
-      (((USB_EP_CTR_RX)|(USB_EP_CTR_TX)) | ((pcd_get_endpoint((USBx), (bEpNum))) & (USB_EPKIND_MASK))) \
-    ); \
-  } while (0)
-
+static inline void PCD_CLEAR_EP_KIND(USB_TypeDef * USBx, unsigned int bEpNum)
+{
+  unsigned int regVal = pcd_get_endpoint(USBx, bEpNum);
+  regVal &= USB_EPKIND_MASK;
+  regVal |= USB_EP_CTR_RX|USB_EP_CTR_TX;
+  pcd_set_endpoint(USBx, bEpNum, regVal);
+}
 
 // This checks if the device has "LPM"
 #if defined(USB_ISTR_L1REQ)

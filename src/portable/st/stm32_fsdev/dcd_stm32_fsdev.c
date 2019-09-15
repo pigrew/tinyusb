@@ -224,7 +224,7 @@ void dcd_init (uint8_t rhport)
   for(uint32_t i=0; i<STFSDEV_EP_COUNT; i++)
   {
     // This doesn't clear all bits since some bits are "toggle", but does set the type to DISABLED.
-    PCD_GET_ENDPOINT(USB,i) = 0u;
+    pcd_set_endpoint(USB,i,0u);
   }
 
   // Initialize the BTABLE for EP0 at this point (though setting up the EP0R is unneeded)
@@ -334,7 +334,7 @@ static void dcd_handle_bus_reset(void)
   // Clear all EPREG (or maybe this is automatic? I'm not sure)
   for(uint32_t i=0; i<STFSDEV_EP_COUNT; i++)
   {
-    PCD_GET_ENDPOINT(USB,i) = 0u;
+    pcd_set_endpoint(USB,i,0u);
   }
 
   ep_buf_ptr = DCD_STM32_BTABLE_BASE + 8*MAX_EP_COUNT; // 8 bytes per endpoint (two TX and two RX words, each)
@@ -348,7 +348,7 @@ static void dcd_handle_bus_reset(void)
 // FIXME: Defined to return uint16 so that ASSERT can be used, even though a return value is not needed.
 static uint16_t dcd_ep_ctr_handler(void)
 {
-  uint16_t count=0U;
+  unsigned int count=0U;
   uint8_t EPindex;
   __IO uint16_t wIstr;
   __IO uint16_t wEPVal = 0U;
@@ -370,7 +370,7 @@ static uint16_t dcd_ep_ctr_handler(void)
       {
         /* DIR = 0  => IN  int */
         /* DIR = 0 implies that (EP_CTR_TX = 1) always  */
-        PCD_CLEAR_TX_EP_CTR(USB, 0);
+        pcd_clear_tx_ep_ctr(USB, 0);
 
         xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
 
@@ -402,7 +402,7 @@ static uint16_t dcd_ep_ctr_handler(void)
         xfer_ctl_t *xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
 
         //ep = &hpcd->OUT_ep[0];
-        wEPVal = PCD_GET_ENDPOINT(USB, EPindex);
+        wEPVal = pcd_get_endpoint(USB, EPindex);
 
         if ((wEPVal & USB_EP_SETUP) != 0U) // SETUP
         {
@@ -410,20 +410,20 @@ static uint16_t dcd_ep_ctr_handler(void)
           // user memory, to allow for the 32-bit access that memcpy performs.
           uint8_t userMemBuf[8];
           /* Get SETUP Packet*/
-          count = PCD_GET_EP_RX_CNT(USB, EPindex);
+          count = pcd_get_ep_rx_cnt(USB, EPindex);
           //TU_ASSERT_ERR(count == 8);
           dcd_read_packet_memory(userMemBuf, *PCD_EP_RX_ADDRESS_PTR(USB,EPindex), 8);
           /* SETUP bit kept frozen while CTR_RX = 1*/
           dcd_event_setup_received(0, (uint8_t*)userMemBuf, true);
-          PCD_CLEAR_RX_EP_CTR(USB, EPindex);
+          pcd_clear_rx_ep_ctr(USB, EPindex);
         }
         else if ((wEPVal & USB_EP_CTR_RX) != 0U) // OUT
         {
 
-          PCD_CLEAR_RX_EP_CTR(USB, EPindex);
+          pcd_clear_rx_ep_ctr(USB, EPindex);
 
           /* Get Control Data OUT Packet */
-          count = PCD_GET_EP_RX_CNT(USB,EPindex);
+          count = pcd_get_ep_rx_cnt(USB,EPindex);
 
           if (count != 0U)
           {
@@ -452,17 +452,17 @@ static uint16_t dcd_ep_ctr_handler(void)
     {
 
       /* process related endpoint register */
-      wEPVal = PCD_GET_ENDPOINT(USB, EPindex);
+      wEPVal = pcd_get_endpoint(USB, EPindex);
       if ((wEPVal & USB_EP_CTR_RX) != 0U) // OUT
       {
         /* clear int flag */
-        PCD_CLEAR_RX_EP_CTR(USB, EPindex);
+        pcd_clear_rx_ep_ctr(USB, EPindex);
 
         xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_OUT);
 
         //ep = &hpcd->OUT_ep[EPindex];
 
-        count = PCD_GET_EP_RX_CNT(USB, EPindex);
+        count = pcd_get_ep_rx_cnt(USB, EPindex);
         if (count != 0U)
         {
           dcd_read_packet_memory(&(xfer->buffer[xfer->queued_len]),
@@ -496,7 +496,7 @@ static uint16_t dcd_ep_ctr_handler(void)
       if ((wEPVal & USB_EP_CTR_TX) != 0U) // IN
       {
         /* clear int flag */
-        PCD_CLEAR_TX_EP_CTR(USB, EPindex);
+        pcd_clear_tx_ep_ctr(USB, EPindex);
 
         xfer_ctl_t * xfer = XFER_CTL_BASE(EPindex,TUSB_DIR_IN);
 
@@ -568,23 +568,24 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   uint8_t const dir   = tu_edpt_dir(p_endpoint_desc->bEndpointAddress);
 
   // Isochronous not supported (yet), and some other driver assumptions.
+#ifndef NDEBUG
   TU_ASSERT(p_endpoint_desc->bmAttributes.xfer != TUSB_XFER_ISOCHRONOUS);
   TU_ASSERT(p_endpoint_desc->wMaxPacketSize.size <= MAX_PACKET_SIZE);
   TU_ASSERT(epnum < MAX_EP_COUNT);
   TU_ASSERT((p_endpoint_desc->wMaxPacketSize.size %2) == 0);
-
+#endif
  // __IO uint16_t * const epreg = &(EPREG(epnum));
 
   // Set type
   switch(p_endpoint_desc->bmAttributes.xfer) {
   case TUSB_XFER_CONTROL:
-    PCD_SET_EPTYPE(USB, epnum, USB_EP_CONTROL); break;
+    pcd_set_eptype(USB, epnum, USB_EP_CONTROL); break;
   case TUSB_XFER_ISOCHRONOUS:
-    PCD_SET_EPTYPE(USB, epnum, USB_EP_ISOCHRONOUS); break;
+    pcd_set_eptype(USB, epnum, USB_EP_ISOCHRONOUS); break;
   case TUSB_XFER_BULK:
-    PCD_SET_EPTYPE(USB, epnum, USB_EP_BULK); break;
+    pcd_set_eptype(USB, epnum, USB_EP_BULK); break;
   case TUSB_XFER_INTERRUPT:
-    PCD_SET_EPTYPE(USB, epnum, USB_EP_INTERRUPT); break;
+    pcd_set_eptype(USB, epnum, USB_EP_INTERRUPT); break;
   default:
     TU_ASSERT(false);
     return false;
@@ -727,7 +728,7 @@ static bool dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   uint16_t temp1, temp2;
   const uint8_t * srcVal;
 
-#ifdef DEBUG
+#ifndef NDEBUG
 #  if (DCD_STM32_BTABLE_BASE > 0u)
      TU_ASSERT(dst >= DCD_STM32_BTABLE_BASE);
 #  endif
@@ -768,7 +769,7 @@ static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
   __IO const uint16_t *pdwVal;
   uint32_t temp;
 
-#ifdef DEBUG
+#ifndef NDEBUG
 #  if (DCD_STM32_BTABLE_BASE > 0u)
      TU_ASSERT(src >= DCD_STM32_BTABLE_BASE);
 #  endif
