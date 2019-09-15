@@ -78,7 +78,6 @@
 
 #define CFG_TUD_MIDI             0
 #define CFG_TUD_VENDOR           0
-#define CFG_TUD_USBTMC           0
 
 // CDC FIFO size of TX and RX
 #define CFG_TUD_CDC_RX_BUFSIZE   64

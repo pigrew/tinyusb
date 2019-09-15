@@ -77,7 +77,6 @@
 #define CFG_TUD_MSC             0
 #define CFG_TUD_MIDI            0
 #define CFG_TUD_VENDOR          0
-#define CFG_TUD_USBTMC          0
 
 // HID buffer size Should be sufficient to hold ID (if any) + Data
 #define CFG_TUD_HID_BUFSIZE     16

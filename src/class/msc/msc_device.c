@@ -613,7 +613,7 @@ static void proc_read10_cmd(uint8_t rhport, mscd_interface_t* p_msc)
   }
   else
   {
-    TU_ASSERT( usbd_edpt_xfer(rhport, p_msc->ep_in, _mscd_buf, nbytes),);
+    TU_ASSERT( usbd_edpt_xfer(rhport, p_msc->ep_in, _mscd_buf, nbytes), );
   }
 }
 
