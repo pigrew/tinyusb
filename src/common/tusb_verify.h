@@ -69,18 +69,26 @@
 #ifdef __cplusplus
  extern "C" {
 #endif
-
+#include "uart_util.h"
+extern char bigMsg[200];
 //--------------------------------------------------------------------+
 // TU_VERIFY Helper
 //--------------------------------------------------------------------+
-#if CFG_TUSB_DEBUG
-  #include <stdio.h>
-  #define _MESS_ERR(_err)   printf("%s: %d: failed, error = %s\n", __func__, __LINE__, tusb_strerr[_err])
-  #define _MESS_FAILED()    printf("%s: %d: failed\n", __func__, __LINE__)
-#else
-  #define _MESS_ERR(_err)
-  #define _MESS_FAILED()
-#endif
+
+
+#define _MESS_ERR(_err)   do { \
+  sprintf(bigMsg,"%s: %d: failed, error = %s\r\n", __func__, __LINE__, tusb_strerr[_err]); \
+  uart_tx_str_sync(bigMsg); \
+ } while (0)
+
+
+  #define _MESS_FAILED() \
+do { \
+	  sprintf(bigMsg,"%s: %d: failed\r\n", __func__, __LINE__); \
+	  uart_tx_str_sync(bigMsg); \
+	 } while (0)
+
+
 
 // Halt CPU (breakpoint) when hitting error, only apply for Cortex M3, M4, M7
 #if defined(__ARM_ARCH_7M__) || defined (__ARM_ARCH_7EM__)
@@ -126,8 +134,8 @@
  * - TU_VERIFY_1ARGS : return false if failed
  * - TU_VERIFY_2ARGS : return provided value if failed
  *------------------------------------------------------------------*/
-#define TU_VERIFY_1ARGS(_cond)                         TU_VERIFY_DEFINE(_cond, , false)
-#define TU_VERIFY_2ARGS(_cond, _ret)                   TU_VERIFY_DEFINE(_cond, , _ret)
+#define TU_VERIFY_1ARGS(_cond)                         TU_VERIFY_DEFINE(_cond,_MESS_FAILED(); , false)
+#define TU_VERIFY_2ARGS(_cond, _ret)                   TU_VERIFY_DEFINE(_cond,_MESS_FAILED(); , _ret)
 
 #define TU_VERIFY(...)                   GET_3RD_ARG(__VA_ARGS__, TU_VERIFY_2ARGS, TU_VERIFY_1ARGS, UNUSED)(__VA_ARGS__)
 

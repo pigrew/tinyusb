@@ -58,7 +58,8 @@
 #include "usbtmc_device.h"
 #include "device/dcd.h"
 #include "device/usbd.h"
-
+#include "uart_util.h"
+char logMsg[150];
 // FIXME: I shouldn't need to include _pvt headers.
 #include "device/usbd_pvt.h"
 
@@ -100,7 +101,12 @@ static usbtmc_interface_state_t usbtmc_state =
 // We want everything to fit nicely in a single packet, so lets require EP size >32
 // I'm not sure if this is really necessary, though.
 TU_VERIFY_STATIC(USBTMCD_MAX_PACKET_SIZE >= 32u,"USBTMC dev EP packet size too small");
-
+TU_VERIFY_STATIC(
+    (sizeof(usbtmc_state.ep_bulk_in_buf) % USBTMCD_MAX_PACKET_SIZE) == 0,
+    "packet buffer must be a multiple of the packet size");
+TU_VERIFY_STATIC(
+    (sizeof(usbtmc_state.ep_bulk_out_buf) % USBTMCD_MAX_PACKET_SIZE) == 0,
+    "packet buffer must be a multiple of the packet size");
 
 static bool handle_devMsgOutStart(uint8_t rhport, void *data, size_t len);
 static bool handle_devMsgOut(uint8_t rhport, void *data, size_t len, size_t packetLen);
@@ -109,11 +115,16 @@ static bool handle_devMsgOut(uint8_t rhport, void *data, size_t len, size_t pack
 // We keep a reference to the buffer, so it MUST not change until the app is
 // notified that the transfer is complete.
 // length of data is specified in the hdr.
+
+// We can't just send the whole thing at once because we need to concatanate the
+// header with the data.
 bool usbtmcd_transmit_dev_msg_data(
     uint8_t rhport,
     usbtmc_msg_dev_dep_msg_in_header_t const * hdr,
     const void *data)
 {
+  const unsigned int txBufLen = sizeof(usbtmc_state.ep_bulk_in_buf);
+  //FIXME: verify that the data is <= the requested amount?
   TU_ASSERT(usbtmc_state.state == STATE_TX_REQUESTED);
 #ifndef NDEBUG
   TU_ASSERT(hdr->TransferSize > 0u);
@@ -128,8 +139,8 @@ bool usbtmcd_transmit_dev_msg_data(
   // Copy in the header
   memcpy(usbtmc_state.ep_bulk_in_buf, hdr, sizeof(*hdr));
   size_t packetLen = sizeof(*hdr);
-  // Single-packet transfer
-  if((packetLen + hdr->TransferSize) <= USBTMCD_MAX_PACKET_SIZE)
+  // If it fits in a single trasnmission:
+  if((packetLen + hdr->TransferSize) <= txBufLen)
   {
     memcpy((uint8_t*)(usbtmc_state.ep_bulk_in_buf) + packetLen, data, hdr->TransferSize);
     packetLen = (uint16_t)(packetLen+ hdr->TransferSize);
@@ -142,15 +153,16 @@ bool usbtmcd_transmit_dev_msg_data(
     usbtmc_state.transfer_size_remaining = 0;
     usbtmc_state.devInBuffer = NULL;
   }
-  else
+  else /* partial packet */
   {
-    memcpy((uint8_t*)(usbtmc_state.ep_bulk_in_buf) + packetLen, data, USBTMCD_MAX_PACKET_SIZE - packetLen);
-    usbtmc_state.transfer_size_remaining = hdr->TransferSize - (USBTMCD_MAX_PACKET_SIZE - packetLen);
-    usbtmc_state.devInBuffer += (USBTMCD_MAX_PACKET_SIZE - packetLen);
-    packetLen = USBTMCD_MAX_PACKET_SIZE;
+    memcpy((uint8_t*)(usbtmc_state.ep_bulk_in_buf) + packetLen, data, txBufLen - packetLen);
+    usbtmc_state.devInBuffer += txBufLen - packetLen;
+    usbtmc_state.transfer_size_remaining = hdr->TransferSize - (txBufLen - packetLen);
+    packetLen = txBufLen;
   }
+
   usbtmc_state.state = STATE_TX_INITIATED;
-  TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf,(uint16_t)packetLen));
+  TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf, (uint16_t)packetLen));
   return true;
 }
 
@@ -158,8 +170,11 @@ void usbtmcd_init(void)
 {
 #ifndef NDEBUG
 #  if USBTMC_CFG_ENABLE_488
-    if(usbtmcd_app_capabilities.bmIntfcCapabilities488.supportsTrigger)
-      TU_ASSERT(&usbtmcd_app_msg_trigger != NULL,);
+  if(usbtmcd_app_capabilities.bmIntfcCapabilities488.supportsTrigger)
+    TU_ASSERT(&usbtmcd_app_msg_trigger != NULL,);
+  // Per USB488 spec: table 8
+  TU_ASSERT(!usbtmcd_app_capabilities.bmIntfcCapabilities.listenOnly,);
+  TU_ASSERT(!usbtmcd_app_capabilities.bmIntfcCapabilities.talkOnly,);
 #  endif
     if(usbtmcd_app_capabilities.bmIntfcCapabilities.supportsIndicatorPulse)
       TU_ASSERT(&usbtmcd_app_indicator_pluse != NULL,);
@@ -286,6 +301,10 @@ static bool handle_devMsgIn(uint8_t rhport, void *data, size_t len)
 {
   TU_VERIFY(len == sizeof(usbtmc_msg_request_dev_dep_in));
   usbtmc_msg_request_dev_dep_in *msg = (usbtmc_msg_request_dev_dep_in*)data;
+
+  sprintf(logMsg," handle_devMsgIn len=%u\r\n",len);
+  uart_tx_str_sync(logMsg);
+
   TU_VERIFY(usbtmc_state.state == STATE_IDLE);
   usbtmc_state.state = STATE_TX_REQUESTED;
   usbtmc_state.transfer_size_remaining = msg->TransferSize;
@@ -302,8 +321,12 @@ static bool handle_devMsgIn(uint8_t rhport, void *data, size_t len)
 bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
   TU_VERIFY(result == XFER_RESULT_SUCCESS);
+  uart_tx_str_sync("USBTMC Xfer CB" );
+  sprintf(logMsg," STATE=%lu ", (uint32_t)usbtmc_state.state);
+  uart_tx_str_sync(logMsg);
   if(ep_addr == usbtmc_state.ep_bulk_out)
   {
+    uart_tx_str_sync("OUT");
     switch(usbtmc_state.state)
     {
     case STATE_IDLE:
@@ -314,6 +337,9 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
       TU_VERIFY(msg->header.bTag != 0x00);
       usbtmc_state.lastTag = msg->header.bTag;
 
+      sprintf(logMsg," type=%lu\r\n",(uint32_t)msg->header.MsgID);
+      uart_tx_str_sync(logMsg);
+
       switch(msg->header.MsgID) {
       case USBTMC_MSGID_DEV_DEP_MSG_OUT:
         TU_VERIFY(handle_devMsgOutStart(rhport, msg, xferred_bytes));
@@ -321,6 +347,7 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
         break;
 
       case USBTMC_MSGID_DEV_DEP_MSG_IN:
+        uart_tx_sync("Handling msg in req\r\n", 21);
         TU_VERIFY(handle_devMsgIn(rhport, msg, xferred_bytes));
         break;
 
@@ -336,6 +363,7 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
       case USBTMC_MSGID_VENDOR_SPECIFIC_MSG_OUT:
       case USBTMC_MSGID_VENDOR_SPECIFIC_IN:
       default:
+
         TU_VERIFY(false);
         return false;
       }
@@ -348,11 +376,15 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
     case STATE_TX_REQUESTED:
     case STATE_TX_INITIATED:
     default:
+      sprintf(logMsg," msg=%lu\r\n ", (uint32_t)msg->header.MsgID);
+      uart_tx_str_sync(logMsg);
       TU_VERIFY(false);
     }
   }
   else if(ep_addr == usbtmc_state.ep_bulk_in)
   {
+    sprintf(logMsg,"IN\r\n");
+    uart_tx_str_sync(logMsg);
     TU_ASSERT(usbtmc_state.state == STATE_TX_INITIATED);
     if(usbtmc_state.transfer_size_remaining == 0)
     {
@@ -360,14 +392,14 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
       TU_VERIFY(usbtmcd_app_msgBulkIn_complete(rhport));
       TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, USBTMCD_MAX_PACKET_SIZE));
     }
-    else if(usbtmc_state.transfer_size_remaining >= USBTMCD_MAX_PACKET_SIZE)
+    else if(usbtmc_state.transfer_size_remaining > sizeof(usbtmc_state.devInBuffer))
     {
-      memcpy(usbtmc_state.ep_bulk_in_buf, usbtmc_state.devInBuffer, USBTMCD_MAX_PACKET_SIZE);
-      usbtmc_state.devInBuffer += USBTMCD_MAX_PACKET_SIZE;
-      usbtmc_state.transfer_size_remaining -= USBTMCD_MAX_PACKET_SIZE;
-      TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf,USBTMCD_MAX_PACKET_SIZE));
+      memcpy(usbtmc_state.ep_bulk_in_buf, usbtmc_state.devInBuffer, sizeof(usbtmc_state.ep_bulk_in_buf));
+      usbtmc_state.devInBuffer += sizeof(usbtmc_state.devInBuffer);
+      usbtmc_state.transfer_size_remaining -= sizeof(usbtmc_state.devInBuffer);
+      TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf,sizeof(usbtmc_state.devInBuffer)));
     }
-    else // short packet
+    else // last packet
     {
       size_t packetLen = usbtmc_state.transfer_size_remaining;
       memcpy(usbtmc_state.ep_bulk_in_buf, usbtmc_state.devInBuffer, usbtmc_state.transfer_size_remaining);
@@ -401,6 +433,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
       (request->bRequest == TUSB_REQ_CLEAR_FEATURE) &&
       (request->wValue == TUSB_REQ_FEATURE_EDPT_HALT))
   {
+    uart_tx_str_sync("feature clear\r\n");
     if((request->wIndex) == usbtmc_state.ep_bulk_out)
     {
       usmtmcd_app_bulkOut_clearFeature(rhport);
@@ -438,6 +471,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
   case USBTMC_bREQUEST_INITIATE_CLEAR:
     {
+      uart_tx_str_sync("init clear\r\n");
       TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
       TU_VERIFY(request->wLength == sizeof(tmcStatusCode));
       // After receiving an INITIATE_CLEAR request, the device must Halt the Bulk-OUT endpoint, queue the
@@ -450,6 +484,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
   case USBTMC_bREQUEST_CHECK_CLEAR_STATUS:
     {
+      uart_tx_str_sync("check clear\r\n");
       usbtmc_get_clear_status_rsp_t clearStatusRsp = {0};
       TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
       TU_VERIFY(request->wLength == sizeof(clearStatusRsp));
@@ -461,6 +496,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
   case USBTMC_bREQUEST_GET_CAPABILITIES:
     {
+      uart_tx_str_sync("get capabilities\r\n");
       TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
       TU_VERIFY(request->wLength == sizeof(usbtmcd_app_capabilities));
       TU_VERIFY(tud_control_xfer(rhport, request, (void*)&usbtmcd_app_capabilities, sizeof(usbtmcd_app_capabilities)));
@@ -470,6 +506,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
   case USBTMC_bREQUEST_INDICATOR_PULSE: // Optional
     {
+      uart_tx_str_sync("indicate\r\n");
       TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
       TU_VERIFY(request->wLength == sizeof(tmcStatusCode));
       TU_VERIFY(usbtmcd_app_capabilities.bmIntfcCapabilities.supportsIndicatorPulse);
@@ -482,6 +519,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     // USB488 required requests
   case USBTMC488_bREQUEST_READ_STATUS_BYTE:
     {
+      uart_tx_str_sync("read stb\r\n");
       usbtmc_read_stb_rsp_488_t rsp;
       TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
       TU_VERIFY(request->wLength == sizeof(rsp)); // in,class,interface
@@ -520,6 +558,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
   case USBTMC488_bREQUEST_GO_TO_LOCAL:
   case USBTMC488_bREQUEST_LOCAL_LOCKOUT:
     {
+      uart_tx_str_sync("Unsupported REN/GTL/LLO\r\n");
       TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
       TU_VERIFY(false);
       return false;
@@ -527,6 +566,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 #endif
 
   default:
+    uart_tx_str_sync("Default CTRL handler\r\n");
     TU_VERIFY(false);
     return false;
   }

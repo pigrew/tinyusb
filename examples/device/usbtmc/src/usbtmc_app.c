@@ -64,8 +64,8 @@ usbtmcd_app_capabilities  =
     }
 #endif
 };
-
-static const char idn[] = "TinyUSB,ModelNumber,SerialNumber,FirmwareVer and a bunch of other text to make it longer than a packet, perhaps?\n";
+static const char idn[] = "TinyUSB,ModelNumber,SerialNumber,FirmwareVer";
+//static const char idn[] = "TinyUSB,ModelNumber,SerialNumber,FirmwareVer and a bunch of other text to make it longer than a packet, perhaps?\n";
 static volatile uint8_t status;
 
 // 0=not query, 1=queried, 2=delay,set(MAV), 3=delay 4=ready?
@@ -86,6 +86,7 @@ bool usbtmcd_app_msgBulkOut_start(uint8_t rhport, usbtmc_msg_request_dev_dep_out
 {
   (void)rhport;
   (void)msgHeader;
+  uart_tx_str_sync("MSG_OUT_DATA: start\r\n");
   return true;
 }
 bool usbtmcd_app_msg_trigger(uint8_t rhport, usbtmc_msg_generic_t* msg) {
@@ -99,6 +100,11 @@ bool usbtmcd_app_msg_data(uint8_t rhport, void *data, size_t len, bool transfer_
   (void)rhport;
 
   // If transfer isn't finished, we just ignore it (for now)
+  uart_tx_str_sync("MSG_OUT_DATA: <<<");
+  uart_tx_sync(data,len);
+  uart_tx_str_sync(">>>\r\n");
+  if(transfer_complete)
+    uart_tx_str_sync("MSG_OUT_DATA: Complete\r\n");
 
   if(transfer_complete && (len >=4) && !strncasecmp("*idn?",data,4)) {
     queryState = 1;
@@ -122,6 +128,7 @@ bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in
   rspMsg.header.bTag = request->header.bTag,
   rspMsg.header.bTagInverse = request->header.bTagInverse;
 
+  uart_tx_str_sync("MSG_IN_DATA: Requested!\r\n");
   TU_ASSERT(bulkInStarted == 0);
   bulkInStarted = 1;
 
