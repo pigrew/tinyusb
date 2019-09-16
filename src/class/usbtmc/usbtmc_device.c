@@ -59,7 +59,7 @@
 #include "device/dcd.h"
 #include "device/usbd.h"
 #include "uart_util.h"
-char logMsg[150];
+static char logMsg[150];
 // FIXME: I shouldn't need to include _pvt headers.
 #include "device/usbd_pvt.h"
 
@@ -71,7 +71,11 @@ typedef enum
   STATE_IDLE,
   STATE_RCV,
   STATE_TX_REQUESTED,
-  STATE_TX_INITIATED
+  STATE_TX_INITIATED,
+  STATE_CLEARING,
+  STATE_ABORTING_BULK_IN,
+  STATE_ABORTING_BULK_OUT,
+  STATE_NUM_STATES
 } usbtmcd_state_enum;
 
 typedef struct
@@ -302,7 +306,7 @@ static bool handle_devMsgIn(uint8_t rhport, void *data, size_t len)
   TU_VERIFY(len == sizeof(usbtmc_msg_request_dev_dep_in));
   usbtmc_msg_request_dev_dep_in *msg = (usbtmc_msg_request_dev_dep_in*)data;
 
-  sprintf(logMsg," handle_devMsgIn len=%u\r\n",len);
+  sprintf(logMsg," handle_devMsgIn len=%ul\r\n",len);
   uart_tx_str_sync(logMsg);
 
   TU_VERIFY(usbtmc_state.state == STATE_IDLE);
@@ -324,6 +328,11 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
   uart_tx_str_sync("USBTMC Xfer CB" );
   sprintf(logMsg," STATE=%lu ", (uint32_t)usbtmc_state.state);
   uart_tx_str_sync(logMsg);
+
+  if(usbtmc_state.state == STATE_CLEARING) {
+    return true; /* I think we can ignore everything here */
+  }
+
   if(ep_addr == usbtmc_state.ep_bulk_out)
   {
     uart_tx_str_sync("OUT");
@@ -376,7 +385,11 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
     case STATE_TX_REQUESTED:
     case STATE_TX_INITIATED:
     default:
-      sprintf(logMsg," msg=%lu\r\n ", (uint32_t)msg->header.MsgID);
+      if(msg == NULL)
+        sprintf(logMsg," Unknown received control?\r\n ");
+      else {
+        sprintf(logMsg," msg=%lu\r\n ", (uint32_t)msg->header.MsgID);
+      }
       uart_tx_str_sync(logMsg);
       TU_VERIFY(false);
     }
@@ -459,15 +472,29 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
   // USBTMC required requests
   case USBTMC_bREQUEST_INITIATE_ABORT_BULK_OUT:
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_OUT_STATUS:
-  case USBTMC_bREQUEST_INITIATE_ABORT_BULK_IN:
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_IN_STATUS:
-    {
-      TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
-      TU_VERIFY(request->wLength == 1u);
-      tmcStatusCode = USBTMC_STATUS_FAILED;
-      usbd_edpt_xfer(rhport, 0u, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
-      return true;
-    }
+  {
+    TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
+    TU_VERIFY(request->wLength == 1u);
+    tmcStatusCode = USBTMC_STATUS_FAILED;
+    usbd_edpt_xfer(rhport, 0u, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
+    return true;
+  }
+
+  case USBTMC_bREQUEST_INITIATE_ABORT_BULK_IN:
+  {
+    usbtmc_initiate_abort_rsp_t *rsp = {0}
+    uart_tx_str_sync("init abort bulk in\r\n");
+    TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
+    TU_VERIFY(request->wLength == sizeof(tmcStatusCode));
+    TU_VERIFY(request->wIndex == usbtmc_state.ep_int_in);
+    // wValue is the requested bTag to abort
+    usbtmc_state.transfer_size_remaining = 0;
+    usbtmc_state.state = STATE_ABORTING_BULK_IN;
+    TU_VERIFY(usbtmcd_app_initiate_clear(rhport, &tmcStatusCode));
+    TU_VERIFY(tud_control_xfer(rhport, request, (void*)&tmcStatusCode,sizeof(tmcStatusCode)));
+    return true;
+  }
 
   case USBTMC_bREQUEST_INITIATE_CLEAR:
     {
@@ -477,6 +504,8 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
       // After receiving an INITIATE_CLEAR request, the device must Halt the Bulk-OUT endpoint, queue the
       // control endpoint response shown in Table 31, and clear all input buffers and output buffers.
       usbd_edpt_stall(rhport, usbtmc_state.ep_bulk_out);
+      usbtmc_state.transfer_size_remaining = 0;
+      usbtmc_state.state = STATE_CLEARING;
       TU_VERIFY(usbtmcd_app_initiate_clear(rhport, &tmcStatusCode));
       TU_VERIFY(tud_control_xfer(rhport, request, (void*)&tmcStatusCode,sizeof(tmcStatusCode)));
       return true;
@@ -485,11 +514,23 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
   case USBTMC_bREQUEST_CHECK_CLEAR_STATUS:
     {
       uart_tx_str_sync("check clear\r\n");
-      usbtmc_get_clear_status_rsp_t clearStatusRsp = {0};
       TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
+      usbtmc_get_clear_status_rsp_t clearStatusRsp = {0};
       TU_VERIFY(request->wLength == sizeof(clearStatusRsp));
-      TU_VERIFY(usbtmcd_app_get_clear_status(rhport, &clearStatusRsp));
 
+      if(usbd_edpt_busy(rhport, usbtmc_state.ep_bulk_in))
+      {
+        // Stuff stuck in TX buffer?
+        clearStatusRsp.bmClear.BulkInFifoBytes = 1;
+        clearStatusRsp.USBTMC_status = USBTMC_STATUS_PENDING;
+      }
+      else
+      {
+        // Let app check if it's clear
+        TU_VERIFY(usbtmcd_app_get_clear_status(rhport, &clearStatusRsp));
+      }
+      if(clearStatusRsp.USBTMC_status == USBTMC_STATUS_SUCCESS)
+        usbtmc_state.state = STATE_IDLE;
       TU_VERIFY(tud_control_xfer(rhport, request, (void*)&clearStatusRsp,sizeof(clearStatusRsp)));
       return true;
     }
