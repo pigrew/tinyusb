@@ -126,6 +126,7 @@ static unsigned int msgReqLen;
 bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in const * request)
 {
   (void)rhport;
+
   rspMsg.header.MsgID = request->header.MsgID,
   rspMsg.header.bTag = request->header.bTag,
   rspMsg.header.bTagInverse = request->header.bTagInverse;
@@ -168,8 +169,7 @@ void usbtmc_app_task_iter(void) {
     if(bulkInStarted) {
       queryState = 0;
       bulkInStarted = 0;
-      rspMsg.TransferSize = tu_min32(sizeof(idn)-1,msgReqLen);
-      usbtmcd_transmit_dev_msg_data(rhport, &rspMsg, idn);
+      usbtmcd_transmit_dev_msg_data(rhport, idn,  tu_min32(sizeof(idn)-1,msgReqLen),false);
       // MAV is cleared in the transfer complete callback.
     }
     break;

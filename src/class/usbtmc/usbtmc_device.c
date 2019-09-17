@@ -8,7 +8,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2019 N Conrad
+ * Copyright (c) 2019 Nathan Conrad
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,33 +33,54 @@
 
 #include "tusb_option.h"
 
-// We don't do any cross-task anything here (everything is in tud or interrupt context).
-// You must ensure thread safety in your own app.
+// Synchronization is needed in some spots.
+// These functions should NOT be called from interrupts.
+
+/* The library is designed that its functions can be called by any user task, with need for
+ * additional locking. In the case of "no OS", this task is never preempted other than by
+ * interrupts, and the USBTMC code isn't called by interrupts, so all is OK. In the case
+ * of an OS, this class driver uses the OSAL to perform locking. The code uses a single lock
+ * and does not call outside of this class with a lock held, so deadlocks won't happen.
+ *
+ * This module's application-facing functions are not reentrant. The application must
+ * only call them from a single thread (or implement its own locking).
+ */
 
 
-//Limitations (not planned to be implemented):
-// "vendor-specific" commands are not handled
+//Limitations:
+// "vendor-specific" commands are not handled.
 // Dealing with "termchar" must be handled by the application layer,
 //    though additional error checking is does in this module.
+// talkOnly and listenOnly are NOT supported. They're no permitted
+// in USB488, anyway.
+
+/* Supported:
+ *
+ * Notification pulse
+ * Trigger
+ * Read status byte (both by interrupt endpoint and control message)
+ *
+ */
+
 
 // TODO:
 // USBTMC 3.2.2 error conditions not strictly followed
 // No local lock-out, REN, or GTL.
 // Cannot handle clear.
-// Not all "capabilities" supported
 // Clear message available status byte at the correct time? (488 4.3.1.3)
-// Split transfers
+// Abort bulk in/out
 // No CLEAR_FEATURE/HALT no EP (yet)
-// No aborting transfers.
 
 #if (TUSB_OPT_DEVICE_ENABLED && CFG_TUD_USBTMC)
 
+#include <string.h>
 #include "usbtmc.h"
 #include "usbtmc_device.h"
 #include "device/dcd.h"
 #include "device/usbd.h"
 #include "uart_util.h"
 static char logMsg[150];
+
 // FIXME: I shouldn't need to include _pvt headers.
 #include "device/usbd_pvt.h"
 
@@ -80,16 +101,22 @@ typedef enum
 
 typedef struct
 {
-  usbtmcd_state_enum state;
+  volatile usbtmcd_state_enum state;
+
   uint8_t itf_id;
   uint8_t ep_bulk_in;
   uint8_t ep_bulk_out;
   uint8_t ep_int_in;
-  uint8_t ep_bulk_in_buf[64];
-  uint8_t ep_bulk_out_buf[64];
-  uint8_t lastTag;
+  // IN buffer is only used for first packet, not the remainder
+  // in order to deal with prepending header
+  uint8_t ep_bulk_in_buf[USBTMCD_MAX_PACKET_SIZE];
+  // OUT buffer receives one packet at a time
+  uint8_t ep_bulk_out_buf[USBTMCD_MAX_PACKET_SIZE];
+  uint32_t transfer_size_remaining; // also used for requested length for bulk IN.
 
-  uint32_t transfer_size_remaining;
+  uint8_t lastBulkOutTag; // used for aborts (mostly)
+  uint8_t lastBulkInTag; // used for aborts (mostly)
+
   uint8_t const * devInBuffer;
 } usbtmc_interface_state_t;
 
@@ -102,18 +129,22 @@ static usbtmc_interface_state_t usbtmc_state =
     .ep_int_in = 0
 };
 
-// We want everything to fit nicely in a single packet, so lets require EP size >32
-// I'm not sure if this is really necessary, though.
+// We need all headers to fit in a single packet in this implementation.
 TU_VERIFY_STATIC(USBTMCD_MAX_PACKET_SIZE >= 32u,"USBTMC dev EP packet size too small");
 TU_VERIFY_STATIC(
     (sizeof(usbtmc_state.ep_bulk_in_buf) % USBTMCD_MAX_PACKET_SIZE) == 0,
     "packet buffer must be a multiple of the packet size");
-TU_VERIFY_STATIC(
-    (sizeof(usbtmc_state.ep_bulk_out_buf) % USBTMCD_MAX_PACKET_SIZE) == 0,
-    "packet buffer must be a multiple of the packet size");
 
 static bool handle_devMsgOutStart(uint8_t rhport, void *data, size_t len);
 static bool handle_devMsgOut(uint8_t rhport, void *data, size_t len, size_t packetLen);
+
+
+osal_mutex_def_t usbtmcLockBuffer;
+static osal_mutex_t usbtmcLock;
+
+// Our own private lock, mostly for the state variable.
+#define criticalEnter() do {osal_mutex_lock(usbtmcLock,OSAL_TIMEOUT_WAIT_FOREVER); } while (0)
+#define criticalLeave() do {osal_mutex_unlock(usbtmcLock); } while (0)
 
 // called from app
 // We keep a reference to the buffer, so it MUST not change until the app is
@@ -124,25 +155,35 @@ static bool handle_devMsgOut(uint8_t rhport, void *data, size_t len, size_t pack
 // header with the data.
 bool usbtmcd_transmit_dev_msg_data(
     uint8_t rhport,
-    usbtmc_msg_dev_dep_msg_in_header_t const * hdr,
-    const void *data)
+    const void * data, size_t len,
+    bool usingTermChar)
 {
   const unsigned int txBufLen = sizeof(usbtmc_state.ep_bulk_in_buf);
-  //FIXME: verify that the data is <= the requested amount?
-  TU_ASSERT(usbtmc_state.state == STATE_TX_REQUESTED);
+
 #ifndef NDEBUG
-  TU_ASSERT(hdr->TransferSize > 0u);
-  if(hdr->bmTransferAttributes.UsingTermChar)
+  TU_ASSERT(len > 0u);
+  TU_ASSERT(len <= usbtmc_state.transfer_size_remaining);
+  if(usingTermChar)
   {
     TU_ASSERT(usbtmcd_app_capabilities.bmDevCapabilities.canEndBulkInOnTermChar);
     TU_ASSERT(termCharRequested);
-    TU_ASSERT(((uint8_t*)data)[hdr->TransferSize-1] == termChar);
+    TU_ASSERT(((uint8_t*)data)[len-1] == termChar);
   }
 #endif
 
+  TU_VERIFY(usbtmc_state.state == STATE_TX_REQUESTED);
+  usbtmc_msg_dev_dep_msg_in_header_t *hdr = (usbtmc_msg_dev_dep_msg_in_header_t*)usbtmc_state.ep_bulk_in_buf;
+  memset(hdr, 0x00, sizeof(*hdr));
+  hdr->header.MsgID = USBTMC_MSGID_DEV_DEP_MSG_IN;
+  hdr->header.bTag = usbtmc_state.lastBulkInTag;
+  hdr->header.bTagInverse = (uint8_t)~(usbtmc_state.lastBulkInTag);
+  hdr->TransferSize = len;
+  hdr->bmTransferAttributes.EOM = 1u;
+  hdr->bmTransferAttributes.UsingTermChar = usingTermChar;
+
   // Copy in the header
-  memcpy(usbtmc_state.ep_bulk_in_buf, hdr, sizeof(*hdr));
   size_t packetLen = sizeof(*hdr);
+
   // If it fits in a single trasnmission:
   if((packetLen + hdr->TransferSize) <= txBufLen)
   {
@@ -165,7 +206,14 @@ bool usbtmcd_transmit_dev_msg_data(
     packetLen = txBufLen;
   }
 
-  usbtmc_state.state = STATE_TX_INITIATED;
+
+  criticalEnter();
+  {
+    TU_VERIFY(usbtmc_state.state == STATE_TX_REQUESTED);
+    usbtmc_state.state = STATE_TX_INITIATED;
+  }
+  criticalLeave();
+
   TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf, (uint16_t)packetLen));
   return true;
 }
@@ -183,6 +231,8 @@ void usbtmcd_init(void)
     if(usbtmcd_app_capabilities.bmIntfcCapabilities.supportsIndicatorPulse)
       TU_ASSERT(&usbtmcd_app_indicator_pluse != NULL,);
 #endif
+
+    usbtmcLock = osal_mutex_create(&usbtmcLockBuffer);
 }
 
 bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
@@ -309,12 +359,18 @@ static bool handle_devMsgIn(uint8_t rhport, void *data, size_t len)
   sprintf(logMsg," handle_devMsgIn len=%ul\r\n",len);
   uart_tx_str_sync(logMsg);
 
-  TU_VERIFY(usbtmc_state.state == STATE_IDLE);
-  usbtmc_state.state = STATE_TX_REQUESTED;
-  usbtmc_state.transfer_size_remaining = msg->TransferSize;
+  criticalEnter();
+  {
+    TU_VERIFY(usbtmc_state.state == STATE_IDLE);
+    usbtmc_state.state = STATE_TX_REQUESTED;
+    usbtmc_state.lastBulkInTag = msg->header.bTag;
+    usbtmc_state.transfer_size_remaining = msg->TransferSize;
+  }
+  criticalLeave();
 
   termCharRequested = msg->bmTransferAttributes.TermCharEnabled;
   termChar = msg->TermChar;
+
   if(termCharRequested)
     TU_VERIFY(usbtmcd_app_capabilities.bmDevCapabilities.canEndBulkInOnTermChar);
 
@@ -344,7 +400,6 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
       uint8_t invInvTag = (uint8_t)~(msg->header.bTagInverse);
       TU_VERIFY(msg->header.bTag == invInvTag);
       TU_VERIFY(msg->header.bTag != 0x00);
-      usbtmc_state.lastTag = msg->header.bTag;
 
       sprintf(logMsg," type=%lu\r\n",(uint32_t)msg->header.MsgID);
       uart_tx_str_sync(logMsg);
@@ -353,6 +408,7 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
       case USBTMC_MSGID_DEV_DEP_MSG_OUT:
         TU_VERIFY(handle_devMsgOutStart(rhport, msg, xferred_bytes));
         TU_VERIFY(usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, USBTMCD_MAX_PACKET_SIZE));
+        usbtmc_state.lastBulkOutTag = msg->header.bTag;
         break;
 
       case USBTMC_MSGID_DEV_DEP_MSG_IN:
@@ -384,6 +440,8 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 
     case STATE_TX_REQUESTED:
     case STATE_TX_INITIATED:
+    case STATE_ABORTING_BULK_IN:
+    case STATE_ABORTING_BULK_OUT:
     default:
       if(msg == NULL)
         sprintf(logMsg," Unknown received control?\r\n ");
@@ -483,7 +541,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
   case USBTMC_bREQUEST_INITIATE_ABORT_BULK_IN:
   {
-    usbtmc_initiate_abort_rsp_t *rsp = {0}
+    usbtmc_initiate_abort_rsp_t rsp = {0};
     uart_tx_str_sync("init abort bulk in\r\n");
     TU_VERIFY(request->bmRequestType == 0xA1); // in,class,interface
     TU_VERIFY(request->wLength == sizeof(tmcStatusCode));
