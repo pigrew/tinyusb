@@ -43,6 +43,8 @@ enum
 };
 static const uint32_t OSAL_TIMEOUT_WAIT_FOREVER = 0xFFFFFFFFUL;
 
+static const uint32_t OSAL_TIMEOUT_WAIT_FOREVER = 0xFFFFFFFFUL;
+
 #define OSAL_TIMEOUT_CONTROL_XFER  OSAL_TIMEOUT_WAIT_FOREVER
 
 typedef void (*osal_task_func_t)( void * );
