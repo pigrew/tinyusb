@@ -408,9 +408,16 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
           uint8_t const cfg_num = (uint8_t) p_request->wValue;
 
           dcd_set_config(rhport, cfg_num);
-          _usbd_dev.configured = cfg_num ? 1 : 0;
+          // We don't know how to de-config
+          if(!_usbd_dev.configured)
+          {
+            _usbd_dev.configured = cfg_num ? 1 : 0;
 
-          if ( cfg_num ) TU_ASSERT( process_set_config(rhport, cfg_num) );
+            if ( cfg_num )
+            {
+              TU_ASSERT( process_set_config(rhport, cfg_num) );
+            }
+          }
           tud_control_status(rhport, p_request);
         }
         break;
