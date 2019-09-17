@@ -295,10 +295,17 @@ bool usbtmcd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 #ifndef NDEBUG
   TU_ASSERT(usbtmc_state.ep_bulk_in != 0);
   TU_ASSERT(usbtmc_state.ep_bulk_out != 0);
-  if (itf_desc->bNumEndpoints == 2) {
+  if (itf_desc->bNumEndpoints == 2)
+  {
     TU_ASSERT(usbtmc_state.ep_int_in == 0);
   }
-  else if (itf_desc->bNumEndpoints == 2)
+  else if (itf_desc->bNumEndpoints == 3)
+  {
+    TU_ASSERT(usbtmc_state.ep_int_in != 0);
+  }
+
+  if(usbtmcd_app_capabilities.bmIntfcCapabilities488.is488_2 ||
+      usbtmcd_app_capabilities.bmDevCapabilities488.SR1)
   {
     TU_ASSERT(usbtmc_state.ep_int_in != 0);
   }
@@ -530,10 +537,18 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
   // USBTMC required requests
   case USBTMC_bREQUEST_INITIATE_ABORT_BULK_OUT:
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_OUT_STATUS:
+  {
+    TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
+    TU_VERIFY(request->wLength == 1u);
+    tmcStatusCode = USBTMC_STATUS_FAILED;
+    usbd_edpt_xfer(rhport, 0u, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
+    return true;
+  }
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_IN_STATUS:
   {
     TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
     TU_VERIFY(request->wLength == 1u);
+    usbtmc_get_clear_status_rsp_t clearStatusRsp = {0};
     tmcStatusCode = USBTMC_STATUS_FAILED;
     usbd_edpt_xfer(rhport, 0u, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
     return true;
