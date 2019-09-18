@@ -43,7 +43,8 @@ enum  {
   BLINK_NOT_MOUNTED = 250,
   BLINK_MOUNTED = 0,
   BLINK_SUSPENDED = 2500,
-};
+}
+; char bigMsg[200];
 
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
@@ -53,7 +54,7 @@ void led_blinking_task(void);
 int main(void)
 {
   board_init();
-
+  MX_USART2_UART_Init();
   tusb_init();
 
   while (1)
@@ -65,7 +66,9 @@ int main(void)
 
   return 0;
 }
-
+void TU_BREAKPOINT() {
+__asm("BKPT");
+}
 //--------------------------------------------------------------------+
 // Device callbacks
 //--------------------------------------------------------------------+
