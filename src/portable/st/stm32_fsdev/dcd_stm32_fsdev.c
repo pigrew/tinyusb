@@ -674,7 +674,7 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
     len = xfer->max_packet_size;
   }
   uint16_t oldAddr = *pcd_ep_tx_address_ptr(USB,ep_ix);
-  TU_ASSERT(oldAddr == xfer->pma_byte_address);
+  TU_ASSERT(oldAddr == xfer->pma_byte_address,);
   dcd_write_packet_memory(oldAddr, &(xfer->buffer[xfer->queued_len]), len);
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
 

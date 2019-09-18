@@ -322,6 +322,8 @@ void usbtmcd_reset(uint8_t rhport)
   usbtmc_state.ep_bulk_in = 0;
   usbtmc_state.ep_bulk_out = 0;
   usbtmc_state.ep_int_in = 0;
+  usbtmc_state.lastBulkInTag = 0;
+  usbtmc_state.lastBulkOutTag = 0;
 
   (void)rhport;
 }
@@ -538,26 +540,22 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
   case USBTMC_bREQUEST_INITIATE_ABORT_BULK_OUT:
   case USBTMC_bREQUEST_CHECK_ABORT_BULK_OUT_STATUS:
   {
+    usbtmc_check_abort_bulk_rsp_t rsp = {
+        .USBTMC_status = USBTMC_STATUS_FAILED,
+    };
     TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
-    TU_VERIFY(request->wLength == 1u);
+    TU_VERIFY(request->wLength == sizeof(rsp));
     TU_VERIFY(request->wIndex == usbtmc_state.ep_bulk_out);
-    tmcStatusCode = USBTMC_STATUS_FAILED;
-    usbd_edpt_xfer(rhport, 0u, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
-    return true;
-  }
-  case USBTMC_bREQUEST_CHECK_ABORT_BULK_IN_STATUS:
-  {
-    TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
-    TU_VERIFY(request->wLength == 1u);
-    usbtmc_get_clear_status_rsp_t clearStatusRsp = {0};
-    tmcStatusCode = USBTMC_STATUS_FAILED;
-    usbd_edpt_xfer(rhport, 0u, (void*)&tmcStatusCode,sizeof(tmcStatusCode));
+    usbd_edpt_xfer(rhport, 0u, (void*)&rsp,sizeof(rsp));
     return true;
   }
 
   case USBTMC_bREQUEST_INITIATE_ABORT_BULK_IN:
   {
-    usbtmc_initiate_abort_rsp_t rsp = {0};
+    usbtmc_initiate_abort_rsp_t rsp = {
+        .bTag = usbtmc_state.lastBulkInTag,
+        .USBTMC_status = USBTMC_STATUS_FAILED
+    };
     uart_tx_str_sync("init abort bulk in\r\n");
     TU_VERIFY(request->bmRequestType == 0xA2); // in,class,interface
     TU_VERIFY(request->wLength == sizeof(rsp));
@@ -565,8 +563,21 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
     // wValue is the requested bTag to abort
     usbtmc_state.transfer_size_remaining = 0;
     usbtmc_state.state = STATE_ABORTING_BULK_IN;
-    TU_VERIFY(usbtmcd_app_initiate_clear(rhport, &tmcStatusCode));
+    TU_VERIFY(usbtmcd_app_initiate_abort_bulk_in(rhport, &(rsp.USBTMC_status)));
     TU_VERIFY(tud_control_xfer(rhport, request, (void*)&rsp,sizeof(rsp)));
+    return true;
+  }
+
+  case USBTMC_bREQUEST_CHECK_ABORT_BULK_IN_STATUS:
+  {
+    TU_VERIFY(request->bmRequestType == 0xA2); // in,class,EP
+    TU_VERIFY(request->wLength == 8u);
+    usbtmc_check_abort_bulk_rsp_t rsp = {
+        .USBTMC_status = USBTMC_STATUS_SUCCESS,
+    };
+    TU_VERIFY(usbtmcd_app_check_abort_bulk_in(rhport, &rsp));
+
+    TU_VERIFY(usbd_edpt_xfer(rhport, 0u, (void*)&rsp,sizeof(rsp)));
     return true;
   }
 
@@ -601,7 +612,7 @@ bool usbtmcd_control_request(uint8_t rhport, tusb_control_request_t const * requ
       else
       {
         // Let app check if it's clear
-        TU_VERIFY(usbtmcd_app_get_clear_status(rhport, &clearStatusRsp));
+        TU_VERIFY(usbtmcd_app_check_clear(rhport, &clearStatusRsp));
       }
       if(clearStatusRsp.USBTMC_status == USBTMC_STATUS_SUCCESS)
         usbtmc_state.state = STATE_IDLE;

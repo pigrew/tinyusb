@@ -189,7 +189,7 @@ bool usbtmcd_app_initiate_clear(uint8_t rhport, uint8_t *tmcResult)
   return true;
 }
 
-bool usbtmcd_app_get_clear_status(uint8_t rhport, usbtmc_get_clear_status_rsp_t *rsp)
+bool usbtmcd_app_check_clear(uint8_t rhport, usbtmc_get_clear_status_rsp_t *rsp)
 {
   (void)rhport;
   queryState = 0;
@@ -197,6 +197,26 @@ bool usbtmcd_app_get_clear_status(uint8_t rhport, usbtmc_get_clear_status_rsp_t 
   status = 0;
   rsp->USBTMC_status = USBTMC_STATUS_SUCCESS;
   rsp->bmClear.BulkInFifoBytes = 0u;
+  return true;
+}
+bool usbtmcd_app_initiate_abort_bulk_in(uint8_t rhport, uint8_t *tmcResult)
+{
+  *tmcResult = USBTMC_STATUS_SUCCESS;
+  return true;
+}
+bool usbtmcd_app_check_abort_bulk_in(uint8_t rhport, usbtmc_check_abort_bulk_rsp_t *rsp)
+{
+  return true;
+}
+
+bool usbtmcd_app_initiate_abort_bulk_out(uint8_t rhport, uint8_t *tmcResult)
+{
+  *tmcResult = USBTMC_STATUS_SUCCESS;
+  return true;
+
+}
+bool usbtmcd_app_check_abort_bulk_out(uint8_t rhport, usbtmc_check_abort_bulk_rsp_t *rsp)
+{
   return true;
 }
 
