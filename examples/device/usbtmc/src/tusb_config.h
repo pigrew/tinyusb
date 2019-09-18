@@ -12,7 +12,7 @@
  extern "C" {
 #endif
 
-#define CFG_TUSB_MCU OPT_MCU_STM32F0
+//#define CFG_TUSB_MCU OPT_MCU_STM32F0
 
 //--------------------------------------------------------------------
 // COMMON CONFIGURATION
