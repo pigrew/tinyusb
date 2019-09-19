@@ -121,7 +121,6 @@
 #undef USE_HAL_DRIVER
 
 #include "device/dcd.h"
-#include "bsp/board.h"
 #include "portable/st/stm32_fsdev/dcd_stm32_fsdev_pvt_st.h"
 
 
@@ -162,24 +161,19 @@ typedef struct
   uint16_t total_len;
   uint16_t queued_len;
   uint16_t max_packet_size;
-  uint16_t pma_byte_address; ///< Offset of start of buffer, in word units, from base of PMA memory
 } xfer_ctl_t;
 
 static xfer_ctl_t  xfer_status[MAX_EP_COUNT][2];
 
 static xfer_ctl_t* xfer_ctl_ptr(uint32_t epnum, uint32_t dir)
 {
-#ifndef NDEBUG
-  TU_ASSERT(epnum < MAX_EP_COUNT);
-  TU_ASSERT(dir < 2u);
-#endif
-
   return &xfer_status[epnum][dir];
 }
 
 static TU_ATTR_ALIGNED(4) uint32_t _setup_packet[6];
 
 static uint8_t newDADDR; // Used to set the new device address during the CTR IRQ handler
+static uint8_t remoteWakeCountdown; // When wake is requested
 
 // EP Buffers assigned from end of memory location, to minimize their chance of crashing
 // into the stack.
@@ -241,7 +235,7 @@ void dcd_init (uint8_t rhport)
   {
     pma[PMA_STRIDE*(DCD_STM32_BTABLE_BASE + i)] = 0u;
   }
-  USB->CNTR |= USB_CNTR_RESETM | USB_CNTR_SOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
+  USB->CNTR |= USB_CNTR_RESETM | USB_CNTR_SOFM | USB_CNTR_ESOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
   dcd_handle_bus_reset();
 
   // And finally enable pull-up, which may trigger the RESET IRQ if the host is connected.
@@ -310,17 +304,9 @@ void dcd_set_config (uint8_t rhport, uint8_t config_num)
 void dcd_remote_wakeup(uint8_t rhport)
 {
   (void) rhport;
-  uint32_t start;
 
   USB->CNTR |= (uint16_t)USB_CNTR_RESUME;
-  /* Wait 1 to 15 ms */
-  /* Busy loop is bad, but the osal_task_delay() isn't implemented for the "none" OSAL */
-  start = board_millis();
-  while ((board_millis() - start) < 2)
-  {
-    ;
-  }
-  USB->CNTR &= (uint16_t)(~USB_CNTR_RESUME);
+  remoteWakeCountdown = 4u; // required to be 1 to 15 ms, ESOF should trigger every 1ms.
 }
 
 // I'm getting a weird warning about missing braces here that I don't
@@ -572,6 +558,18 @@ static void dcd_fs_irqHandler(void) {
     reg16_clear_bits(&USB->ISTR, USB_ISTR_SOF);
     dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
   }
+
+  if(int_status & USB_ISTR_ESOF) {
+    if(remoteWakeCountdown == 1u)
+    {
+      USB->CNTR &= (uint16_t)(~USB_CNTR_RESUME);
+    }
+    if(remoteWakeCountdown > 0u)
+    {
+      remoteWakeCountdown--;
+    }
+    reg16_clear_bits(&USB->ISTR, USB_ISTR_ESOF);
+  }
 }
 
 //--------------------------------------------------------------------+
@@ -588,31 +586,9 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   uint8_t const dir   = tu_edpt_dir(p_endpoint_desc->bEndpointAddress);
   const uint16_t epMaxPktSize = p_endpoint_desc->wMaxPacketSize.size;
   // Isochronous not supported (yet), and some other driver assumptions.
-#ifndef NDEBUG
+
   TU_ASSERT(p_endpoint_desc->bmAttributes.xfer != TUSB_XFER_ISOCHRONOUS);
   TU_ASSERT(epnum < MAX_EP_COUNT);
-
-  switch(p_endpoint_desc->bmAttributes.xfer) {
-  case TUSB_XFER_CONTROL:
-    // USB 2.0 spec on FS packets, 5.5.3 (control)
-    TU_ASSERT((epMaxPktSize == 8) ||(epMaxPktSize == 16) || (epMaxPktSize == 32) || (epMaxPktSize == 64));
-    break;
-  case TUSB_XFER_ISOCHRONOUS: // FIXME: Not yet supported
-    TU_ASSERT(epMaxPktSize <= 1023);
-    break;
-  case TUSB_XFER_BULK:
-    // USB 2.0 spec on FS packets, 5.8.3 (bulk)
-    TU_ASSERT((epMaxPktSize == 8) ||(epMaxPktSize == 16) ||(epMaxPktSize == 32) ||(epMaxPktSize == 64));
-    break;
-  case TUSB_XFER_INTERRUPT:
-    // USB 2.0 spec on FS packets, 5.5.3 (interrupt); interestingly 0 is allowed.
-    TU_ASSERT(epMaxPktSize <= 64);
-    break;
-  default:
-    TU_ASSERT(false);
-    return false;
-  }
-#endif
 
   // Set type
   switch(p_endpoint_desc->bmAttributes.xfer) {
@@ -657,7 +633,6 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   }
 
   xfer_ctl_ptr(epnum, dir)->max_packet_size = epMaxPktSize;
-  xfer_ctl_ptr(epnum, dir)->pma_byte_address = ep_buf_ptr;
   ep_buf_ptr = (uint16_t)(ep_buf_ptr + p_endpoint_desc->wMaxPacketSize.size); // increment buffer pointer
 
   return true;
@@ -674,7 +649,6 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
     len = xfer->max_packet_size;
   }
   uint16_t oldAddr = *pcd_ep_tx_address_ptr(USB,ep_ix);
-  TU_ASSERT(oldAddr == xfer->pma_byte_address,);
   dcd_write_packet_memory(oldAddr, &(xfer->buffer[xfer->queued_len]), len);
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
 
@@ -779,14 +753,6 @@ static bool dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   uint16_t temp1, temp2;
   const uint8_t * srcVal;
 
-#ifndef NDEBUG
-#  if (DCD_STM32_BTABLE_BASE > 0u)
-     TU_ASSERT(dst >= DCD_STM32_BTABLE_BASE);
-#  endif
-    TU_ASSERT((dst%2) == 0);
-    TU_ASSERT((dst + wNBytes) <= (DCD_STM32_BTABLE_BASE + DCD_STM32_BTABLE_LENGTH));
-#endif
-
   // The GCC optimizer will combine access to 32-bit sizes if we let it. Force
   // it volatile so that it won't do that.
   __IO uint16_t *pdwVal;
@@ -820,15 +786,6 @@ static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
   // it volatile so that it won't do that.
   __IO const uint16_t *pdwVal;
   uint32_t temp;
-
-#ifndef NDEBUG
-#  if (DCD_STM32_BTABLE_BASE > 0u)
-     TU_ASSERT(src >= DCD_STM32_BTABLE_BASE);
-#  endif
-    TU_ASSERT((src%2) == 0);
-    TU_ASSERT((src + wNBytes) <= (DCD_STM32_BTABLE_BASE + DCD_STM32_BTABLE_LENGTH));
-#endif
-
 
   pdwVal = &pma[PMA_STRIDE*(src>>1)];
   uint8_t *dstVal = (uint8_t*)dst;
