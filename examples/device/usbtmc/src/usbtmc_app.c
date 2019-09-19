@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2019 N Conrad
+ * Copyright (c) 2019 Nathan Conrad
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -97,7 +97,9 @@ bool usbtmcd_app_msgBulkOut_start(uint8_t rhport, usbtmc_msg_request_dev_dep_out
 {
   (void)rhport;
   (void)msgHeader;
+#ifdef xDEBUG
   uart_tx_str_sync("MSG_OUT_DATA: start\r\n");
+#endif
   buffer_len = 0;
   return true;
 }
@@ -107,11 +109,13 @@ bool usbtmcd_app_msg_data(uint8_t rhport, void *data, size_t len, bool transfer_
   (void)rhport;
 
   // If transfer isn't finished, we just ignore it (for now)
+#ifdef xDEBUG
   uart_tx_str_sync("MSG_OUT_DATA: <<<");
   uart_tx_sync(data,len);
   uart_tx_str_sync(">>>\r\n");
   if(transfer_complete)
     uart_tx_str_sync("MSG_OUT_DATA: Complete\r\n");
+#endif
 
   if(len + buffer_len < sizeof(buffer))
   {
@@ -147,8 +151,9 @@ bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in
   rspMsg.header.bTag = request->header.bTag,
   rspMsg.header.bTagInverse = request->header.bTagInverse;
   msgReqLen = request->TransferSize;
-
+#ifdef xDEBUG
   uart_tx_str_sync("MSG_IN_DATA: Requested!\r\n");
+#endif
   TU_ASSERT(bulkInStarted == 0);
   bulkInStarted = 1;
 
@@ -174,7 +179,7 @@ void usbtmc_app_task_iter(void) {
     queryState = 2;
     break;
   case 2:
-    if( (board_millis() - queryDelayStart) > 10u) {
+    if( (board_millis() - queryDelayStart) > board_delay) {
       queryDelayStart = board_millis();
       queryState=3;
       status |= 0x10u; // MAV
@@ -182,7 +187,7 @@ void usbtmc_app_task_iter(void) {
     }
     break;
   case 3:
-    if( (board_millis() - queryDelayStart) > 23u) {
+    if( (board_millis() - queryDelayStart) > board_delay) {
       queryState = 4;
     }
     break;
@@ -190,10 +195,12 @@ void usbtmc_app_task_iter(void) {
     if(bulkInStarted) {
       queryState = 0;
       bulkInStarted = 0;
+#ifdef xDEBUG
       uart_tx_str_sync("usbtmc_app_task_iter: sending rsp!\r\n");
+#endif
       if(idnQuery)
       {
-        usbtmcd_transmit_dev_msg_data(rhport, idn,  tu_min32(sizeof(idn)-1,msgReqLen),false);
+      usbtmcd_transmit_dev_msg_data(rhport, idn,  tu_min32(sizeof(idn)-1,msgReqLen),false);
       }
       else
       {
