@@ -79,7 +79,7 @@
 #include "usbtmc_device.h"
 #include "device/dcd.h"
 #include "device/usbd.h"
-#define xDEBUG
+
 #ifdef xDEBUG
 #include "uart_util.h"
 static char logMsg[150];
@@ -512,28 +512,28 @@ bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 
     case STATE_TX_INITIATED:
       if(usbtmc_state.transfer_size_remaining >=sizeof(usbtmc_state.ep_bulk_in_buf))
-      {
+    {
         TRACE("IN TX continuing\r\n");
-        //memcpy(usbtmc_state.ep_bulk_in_buf, usbtmc_state.devInBuffer, sizeof(usbtmc_state.ep_bulk_in_buf));
+        // FIXME! This removes const below!
         TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in,
-            usbtmc_state.devInBuffer,sizeof(usbtmc_state.ep_bulk_in_buf)));
+            (void*)usbtmc_state.devInBuffer,sizeof(usbtmc_state.ep_bulk_in_buf)));
         usbtmc_state.devInBuffer += sizeof(usbtmc_state.ep_bulk_in_buf);
         usbtmc_state.transfer_size_remaining -= sizeof(usbtmc_state.ep_bulk_in_buf);
         usbtmc_state.transfer_size_sent += sizeof(usbtmc_state.ep_bulk_in_buf);
-      }
-      else // last packet
-      {
+    }
+    else // last packet
+    {
         TRACE("IN TX last packet\r\n");
-        size_t packetLen = usbtmc_state.transfer_size_remaining;
-        memcpy(usbtmc_state.ep_bulk_in_buf, usbtmc_state.devInBuffer, usbtmc_state.transfer_size_remaining);
+      size_t packetLen = usbtmc_state.transfer_size_remaining;
+      memcpy(usbtmc_state.ep_bulk_in_buf, usbtmc_state.devInBuffer, usbtmc_state.transfer_size_remaining);
         usbtmc_state.transfer_size_sent += sizeof(usbtmc_state.transfer_size_remaining);
-        usbtmc_state.transfer_size_remaining = 0;
-        usbtmc_state.devInBuffer = NULL;
-        TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf,(uint16_t)packetLen));
+      usbtmc_state.transfer_size_remaining = 0;
+      usbtmc_state.devInBuffer = NULL;
+      TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_in, usbtmc_state.ep_bulk_in_buf,(uint16_t)packetLen));
         if(((packetLen % USBTMCD_MAX_PACKET_SIZE) != 0) || (packetLen == 0 ))
         {
           usbtmc_state.state = STATE_TX_SHORTED;
-        }
+    }
       }
       return true;
     case STATE_ABORTING_BULK_IN:

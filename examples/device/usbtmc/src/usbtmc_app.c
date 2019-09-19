@@ -24,10 +24,11 @@
  */
 
 #include <strings.h>
+#include <stdlib.h>     /* atoi */
 #include "class/usbtmc/usbtmc_device.h"
 #include "bsp/board.h"
 #include "main.h"
-#define xDEBUG
+
 #if (USBTMC_CFG_ENABLE_488)
 usbtmc_response_capabilities_488_t const
 #else
@@ -135,7 +136,7 @@ bool usbtmcd_app_msg_data(uint8_t rhport, void *data, size_t len, bool transfer_
   if(transfer_complete && !strncasecmp("delay ",data,5))
   {
     queryState = 0;
-    resp_delay = atoi(&(data[5]));
+    resp_delay = atoi((char*)data + 5);
     if(resp_delay > 10000u)
       resp_delay = 10000u;
   }
@@ -205,7 +206,7 @@ void usbtmc_app_task_iter(void) {
 #endif
       if(idnQuery)
       {
-      usbtmcd_transmit_dev_msg_data(rhport, idn,  tu_min32(sizeof(idn)-1,msgReqLen),false);
+        usbtmcd_transmit_dev_msg_data(rhport, idn,  tu_min32(sizeof(idn)-1,msgReqLen),false);
       }
       else
       {
