@@ -73,6 +73,11 @@ static volatile uint8_t status;
 static volatile uint16_t queryState = 0;
 static volatile uint32_t queryDelayStart;
 static volatile uint32_t bulkInStarted;
+static volatile uint32_t idnQuery;
+
+static size_t buffer_len;
+static uint8_t buffer[225]; // A few packets long should be enough.
+
 
 static usbtmc_msg_dev_dep_msg_in_header_t rspMsg = {
     .bmTransferAttributes =
@@ -82,16 +87,18 @@ static usbtmc_msg_dev_dep_msg_in_header_t rspMsg = {
     }
 };
 
+bool usbtmcd_app_msg_trigger(uint8_t rhport, usbtmc_msg_generic_t* msg) {
+  (void)rhport;
+  (void)msg;
+  return true;
+}
+
 bool usbtmcd_app_msgBulkOut_start(uint8_t rhport, usbtmc_msg_request_dev_dep_out const * msgHeader)
 {
   (void)rhport;
   (void)msgHeader;
   uart_tx_str_sync("MSG_OUT_DATA: start\r\n");
-  return true;
-}
-bool usbtmcd_app_msg_trigger(uint8_t rhport, usbtmc_msg_generic_t* msg) {
-  (void)rhport;
-  (void)msg;
+  buffer_len = 0;
   return true;
 }
 
@@ -106,8 +113,17 @@ bool usbtmcd_app_msg_data(uint8_t rhport, void *data, size_t len, bool transfer_
   if(transfer_complete)
     uart_tx_str_sync("MSG_OUT_DATA: Complete\r\n");
 
-  if(transfer_complete && (len >=4) && !strncasecmp("*idn?",data,4)) {
-    queryState = 1;
+  if(len + buffer_len < sizeof(buffer))
+  {
+    memcpy(&(buffer[buffer_len]), data, len);
+    buffer_len += len;
+  }
+  queryState = transfer_complete;
+  idnQuery = 0;
+
+  if(transfer_complete && (len >=4) && !strncasecmp("*idn?",data,4))
+  {
+    idnQuery = 1;
   }
   return true;
 }
@@ -116,7 +132,7 @@ bool usbtmcd_app_msgBulkIn_complete(uint8_t rhport)
 {
   (void)rhport;
 
-  status &= (uint8_t)~(0x10u); // clear MAV
+  status &= (uint8_t)~(0x50u); // clear MAV and SRQ
 
   return true;
 }
@@ -145,7 +161,11 @@ bool usbtmcd_app_msgBulkIn_request(uint8_t rhport, usbtmc_msg_request_dev_dep_in
 
 void usbtmc_app_task_iter(void) {
   uint8_t const rhport = 0;
-
+  uint32_t board_delay = 5u;
+  if(idnQuery)
+  {
+    board_delay = 350u;
+  }
   switch(queryState) {
   case 0:
     break;
@@ -154,14 +174,15 @@ void usbtmc_app_task_iter(void) {
     queryState = 2;
     break;
   case 2:
-    if( (board_millis() - queryDelayStart) > 200u) {
+    if( (board_millis() - queryDelayStart) > 10u) {
       queryDelayStart = board_millis();
       queryState=3;
       status |= 0x10u; // MAV
+      status |= 0x40u; // SRQ
     }
     break;
   case 3:
-    if( (board_millis() - queryDelayStart) > 400u) {
+    if( (board_millis() - queryDelayStart) > 23u) {
       queryState = 4;
     }
     break;
@@ -170,7 +191,14 @@ void usbtmc_app_task_iter(void) {
       queryState = 0;
       bulkInStarted = 0;
       uart_tx_str_sync("usbtmc_app_task_iter: sending rsp!\r\n");
-      usbtmcd_transmit_dev_msg_data(rhport, idn,  tu_min32(sizeof(idn)-1,msgReqLen),false);
+      if(idnQuery)
+      {
+        usbtmcd_transmit_dev_msg_data(rhport, idn,  tu_min32(sizeof(idn)-1,msgReqLen),false);
+      }
+      else
+      {
+        usbtmcd_transmit_dev_msg_data(rhport, buffer,  tu_min32(buffer_len,msgReqLen),false);
+      }
       // MAV is cleared in the transfer complete callback.
     }
     break;
@@ -235,10 +263,13 @@ void usmtmcd_app_bulkOut_clearFeature(uint8_t rhport)
 uint8_t usbtmcd_app_get_stb(uint8_t rhport, uint8_t *tmcResult)
 {
   (void)rhport;
+  uint8_t old_status = status;
+  status = status & ~(0x40); // clear SRQ
+
   *tmcResult = USBTMC_STATUS_SUCCESS;
   // Increment status so that we see different results on each read...
 
-  return status;
+  return old_status;
 }
 
 bool usbtmcd_app_indicator_pluse(uint8_t rhport, tusb_control_request_t const * msg, uint8_t *tmcResult)
