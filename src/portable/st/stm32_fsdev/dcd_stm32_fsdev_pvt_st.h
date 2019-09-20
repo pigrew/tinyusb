@@ -347,7 +347,7 @@ static inline void pcd_clear_tx_dtog(USB_TypeDef * USBx,  uint32_t bEpNum)
   if((regVal & USB_EP_DTOG_TX) != 0)
   {
     pcd_tx_dtog(USBx,bEpNum);
-                                         }
+  }
 }
 
 /**
