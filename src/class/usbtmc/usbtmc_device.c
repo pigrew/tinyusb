@@ -31,25 +31,31 @@
  * This file is part of the TinyUSB stack.
  */
 
-// Synchronization is needed in some spots.
-// These functions should NOT be called from interrupts.
-
-/* The library is designed that its functions can be called by any user task, with need for
- * additional locking. In the case of "no OS", this task is never preempted other than by
- * interrupts, and the USBTMC code isn't called by interrupts, so all is OK. In the case
- * of an OS, this class driver uses the OSAL to perform locking. The code uses a single lock
- * and does not call outside of this class with a lock held, so deadlocks won't happen.
+/*
+ * This library is not fully reentrant, though it is reentrant from the view
+ * of either the application layer or the USB stack. Due to its locking,
+ * it is not safe to call its functions from interrupts.
  *
- * This module's application-facing functions are not reentrant. The application must
- * only call them from a single thread (or implement its own locking).
+ * The one exception is that its functions may not be called from the application
+ * until the USB stack is initialized. This should not be a problem since the
+ * device shouldn't be sending messages until it receives a request from the
+ * host.
  */
 
+
+/*
+ * In the case of single-CPU "no OS", this task is never preempted other than by
+ * interrupts, and the USBTMC code isn't called by interrupts, so all is OK. For "no OS",
+ * the mutex structure's main effect is to disable the USB interrupts.
+ * With an OS, this class driver uses the OSAL to perform locking. The code uses a single lock
+ * and does not call outside of this class with a lock held, so deadlocks won't happen.
+ */
 
 //Limitations:
 // "vendor-specific" commands are not handled.
 // Dealing with "termchar" must be handled by the application layer,
 //    though additional error checking is does in this module.
-// talkOnly and listenOnly are NOT supported. They're no permitted
+// talkOnly and listenOnly are NOT supported. They're not permitted
 // in USB488, anyway.
 
 /* Supported:
@@ -64,10 +70,7 @@
 // TODO:
 // USBTMC 3.2.2 error conditions not strictly followed
 // No local lock-out, REN, or GTL.
-// Cannot handle clear.
 // Clear message available status byte at the correct time? (488 4.3.1.3)
-// Abort bulk in/out
-// No CLEAR_FEATURE/HALT no EP (yet)
 
 
 #include "tusb_option.h"
@@ -79,21 +82,24 @@
 #include "usbtmc_device.h"
 #include "device/dcd.h"
 #include "device/usbd.h"
+#include "osal/osal.h"
+
+// FIXME: I shouldn't need to include _pvt headers, but it is necessary for usbd_edpt_xfer, _stall, and _busy
+#include "device/usbd_pvt.h"
 
 #ifdef xDEBUG
 #include "uart_util.h"
 static char logMsg[150];
 #endif
 
-
-// FIXME: I shouldn't need to include _pvt headers.
-#include "device/usbd_pvt.h"
-
-static uint8_t termChar;
-static uint8_t termCharRequested = false;
+/*
+ * The state machine does not allow simultaneous reading and writing. This is
+ * consistent with USBTMC.
+ */
 
 typedef enum
 {
+  STATE_CLOSED,
   STATE_IDLE,
   STATE_RCV,
   STATE_TX_REQUESTED,
@@ -126,16 +132,12 @@ typedef struct
   uint8_t lastBulkOutTag; // used for aborts (mostly)
   uint8_t lastBulkInTag; // used for aborts (mostly)
 
-  uint8_t const * devInBuffer;
+  uint8_t const * devInBuffer; // pointer to application-layer used for transmissions
 } usbtmc_interface_state_t;
 
 static usbtmc_interface_state_t usbtmc_state =
 {
-    .state = STATE_IDLE,
     .itf_id = 0xFF,
-    .ep_bulk_in = 0,
-    .ep_bulk_out = 0,
-    .ep_int_in = 0
 };
 
 // We need all headers to fit in a single packet in this implementation.
@@ -146,6 +148,9 @@ TU_VERIFY_STATIC(
 
 static bool handle_devMsgOutStart(uint8_t rhport, void *data, size_t len);
 static bool handle_devMsgOut(uint8_t rhport, void *data, size_t len, size_t packetLen);
+
+static uint8_t termChar;
+static uint8_t termCharRequested = false;
 
 
 osal_mutex_def_t usbtmcLockBuffer;
@@ -173,17 +178,18 @@ bool usbtmcd_transmit_dev_msg_data(
 #ifndef NDEBUG
   TU_ASSERT(len > 0u);
   TU_ASSERT(len <= usbtmc_state.transfer_size_remaining);
+  TU_ASSERT(usbtmc_state.transfer_size_sent == 0u);
   if(usingTermChar)
   {
     TU_ASSERT(tud_usbtmc_app_capabilities.bmDevCapabilities.canEndBulkInOnTermChar);
     TU_ASSERT(termCharRequested);
-    TU_ASSERT(((uint8_t*)data)[len-1] == termChar);
+    TU_ASSERT(((uint8_t*)data)[len-1u] == termChar);
   }
 #endif
 
   TU_VERIFY(usbtmc_state.state == STATE_TX_REQUESTED);
   usbtmc_msg_dev_dep_msg_in_header_t *hdr = (usbtmc_msg_dev_dep_msg_in_header_t*)usbtmc_state.ep_bulk_in_buf;
-  memset(hdr, 0x00, sizeof(*hdr));
+  tu_varclr(&hdr);
   hdr->header.MsgID = USBTMC_MSGID_DEV_DEP_MSG_IN;
   hdr->header.bTag = usbtmc_state.lastBulkInTag;
   hdr->header.bTagInverse = (uint8_t)~(usbtmc_state.lastBulkInTag);
@@ -228,13 +234,13 @@ bool usbtmcd_transmit_dev_msg_data(
 void usbtmcd_init_cb(void)
 {
 #ifndef NDEBUG
-#  if CFG_USBTMC_CFG_ENABLE_488
-  if(tud_usbtmc_app_capabilities.bmIntfcCapabilities488.supportsTrigger)
-    TU_ASSERT(&tud_usbtmc_app_msg_trigger_cb != NULL,);
-  // Per USB488 spec: table 8
-  TU_ASSERT(!tud_usbtmc_app_capabilities.bmIntfcCapabilities.listenOnly,);
-  TU_ASSERT(!tud_usbtmc_app_capabilities.bmIntfcCapabilities.talkOnly,);
-#  endif
+# if CFG_USBTMC_CFG_ENABLE_488
+    if(tud_usbtmc_app_capabilities.bmIntfcCapabilities488.supportsTrigger)
+      TU_ASSERT(&tud_usbtmc_app_msg_trigger_cb != NULL,);
+      // Per USB488 spec: table 8
+      TU_ASSERT(!tud_usbtmc_app_capabilities.bmIntfcCapabilities.listenOnly,);
+      TU_ASSERT(!tud_usbtmc_app_capabilities.bmIntfcCapabilities.talkOnly,);
+# endif
     if(tud_usbtmc_app_capabilities.bmIntfcCapabilities.supportsIndicatorPulse)
       TU_ASSERT(&tud_usbtmc_app_indicator_pluse_cb != NULL,);
 #endif
@@ -244,12 +250,11 @@ void usbtmcd_init_cb(void)
 
 bool usbtmcd_open_cb(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
 {
+  uart_tx_str_sync("usbtmcd_open_cb\r\n");
   (void)rhport;
+  TU_ASSERT(usbtmc_state.state == STATE_CLOSED);
   uint8_t const * p_desc;
   uint8_t found_endpoints = 0;
-
-
-  usbtmcd_reset_cb(rhport);
 
   // Perhaps there are other application specific class drivers, so don't assert here.
   if( itf_desc->bInterfaceClass != TUD_USBTMC_APP_CLASS)
@@ -319,22 +324,20 @@ bool usbtmcd_open_cb(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uin
   }
 #endif
 #endif
+  usbtmc_state.state = STATE_IDLE;
   TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, 64));
 
   return true;
 }
 void usbtmcd_reset_cb(uint8_t rhport)
 {
-  // FIXME: Do endpoints need to be closed here?
-  usbtmc_state.state = STATE_IDLE;
-  usbtmc_state.itf_id = 0xFF;
-  usbtmc_state.ep_bulk_in = 0;
-  usbtmc_state.ep_bulk_out = 0;
-  usbtmc_state.ep_int_in = 0;
-  usbtmc_state.lastBulkInTag = 0;
-  usbtmc_state.lastBulkOutTag = 0;
-
   (void)rhport;
+  uart_tx_str_sync("usbtmcd_reset_cb\r\n");
+  // FIXME: Do endpoints need to be closed here?
+  criticalEnter();
+  tu_varclr(&usbtmc_state);
+  usbtmc_state.itf_id = 0xFFu;
+  criticalLeave();
 }
 
 static bool handle_devMsgOutStart(uint8_t rhport, void *data, size_t len)
@@ -404,7 +407,7 @@ static bool handle_devMsgIn(uint8_t rhport, void *data, size_t len)
 bool usbtmcd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
   TU_VERIFY(result == XFER_RESULT_SUCCESS);
-
+  uart_tx_str_sync("TMC XFER CB\r\n");
   if(usbtmc_state.state == STATE_CLEARING) {
     return true; /* I think we can ignore everything here */
   }
@@ -619,7 +622,7 @@ bool usbtmcd_control_request_cb(uint8_t rhport, tusb_control_request_t const * r
         usbtmc_state.lastBulkInTag == (request->wValue & 0xf7u))
     {
       rsp.USBTMC_status = USBTMC_STATUS_SUCCESS;
-    usbtmc_state.transfer_size_remaining = 0;
+    usbtmc_state.transfer_size_remaining = 0u;
       // Check if we've queued a short packet
       usbtmc_state.state = ((usbtmc_state.transfer_size_sent % USBTMCD_MAX_PACKET_SIZE) == 0) ?
               STATE_ABORTING_BULK_IN : STATE_ABORTING_BULK_IN_SHORTED;
