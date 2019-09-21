@@ -6,7 +6,8 @@ import sys
 
 def test_idn():
 	idn = inst.query("*idn?");
-	assert idn == "TinyUSB,ModelNumber,SerialNumber,FirmwareVer123456\r\n"
+	assert (idn == "TinyUSB,ModelNumber,SerialNumber,FirmwareVer123456\r\n")
+	assert (inst.is_4882_compliant)
 
 def test_echo(m,n):
 	longstr = "0123456789abcdefghijklmnopqrstuvwxyz" * 50
@@ -81,11 +82,27 @@ def test_read_timeout():
 	print(f"Delay was {t:0.3}")
 	# Response is still in queue, so send a clear (to be more helpful to the next test)
 	inst.clear()
+	time.sleep(0.3)
+	assert(0 ==  (inst.read_stb() & 0x10)), "MAV not reset after clear"
 	
 def test_indicate():
+	# perform indicator pulse
 	usb_iface = inst.get_visa_attribute(visa.constants.VI_ATTR_USB_INTFC_NUM)
 	retv = inst.control_in(request_type_bitmap_field=0xA1, request_id=64, request_value=0x0000, index=usb_iface, length=0x0001)
 	assert((retv[1] == visa.constants.StatusCode(0)) and (retv[0] == b'\x01')), f"indicator pulse failed: retv={retv}"
+	
+	
+def test_multi_read():
+	old_chunk_size = inst.chunk_size
+	longstr = "0123456789abcdefghijklmnopqrstuvwxyz" * 10
+	timeout = 10
+	x = longstr[0:174]
+	inst.chunk_size = 50 # Seems chunk size only applies to read but not write
+	inst.write(x)
+	# I'm not sure how to request just the remaining bit using a max count... so just read it all.
+	y = inst.read()
+	assert (x + "\r\n" == y)
+	#inst.chunk_size = old_chunk_size
 	
 
 rm = visa.ResourceManager("/c/Windows/system32/visa64.dll")
@@ -104,6 +121,9 @@ print("+ IDN")
 test_idn()
 
 inst.timeout = 2000
+
+print("+ multi read")
+test_multi_read()
 
 
 print("+ echo delay=0")

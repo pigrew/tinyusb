@@ -165,6 +165,7 @@ static osal_mutex_t usbtmcLock;
 bool usbtmcd_transmit_dev_msg_data(
     uint8_t rhport,
     const void * data, size_t len,
+    bool endOfMessage,
     bool usingTermChar)
 {
   const unsigned int txBufLen = sizeof(usbtmc_state.ep_bulk_in_buf);
@@ -187,13 +188,13 @@ bool usbtmcd_transmit_dev_msg_data(
   hdr->header.bTag = usbtmc_state.lastBulkInTag;
   hdr->header.bTagInverse = (uint8_t)~(usbtmc_state.lastBulkInTag);
   hdr->TransferSize = len;
-  hdr->bmTransferAttributes.EOM = 1u;
+  hdr->bmTransferAttributes.EOM = endOfMessage;
   hdr->bmTransferAttributes.UsingTermChar = usingTermChar;
 
   // Copy in the header
   size_t packetLen = sizeof(*hdr);
 
-  // If it fits in a single trasnmission:
+  // If it fits in a single transmission:
   if((packetLen + hdr->TransferSize) <= txBufLen)
   {
     memcpy((uint8_t*)(usbtmc_state.ep_bulk_in_buf) + packetLen, data, hdr->TransferSize);
