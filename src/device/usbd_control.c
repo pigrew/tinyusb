@@ -100,7 +100,8 @@ bool tud_control_xfer(uint8_t rhport, tusb_control_request_t const * request, vo
 
     // Data stage
     TU_ASSERT( start_control_data_xact(rhport) );
-  }else
+  }
+  else
   {
     // Status stage
     TU_ASSERT( tud_control_status(rhport, request) );

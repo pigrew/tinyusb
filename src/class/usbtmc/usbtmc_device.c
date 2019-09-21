@@ -534,15 +534,22 @@ bool usbtmcd_control_request_cb(uint8_t rhport, tusb_control_request_t const * r
       (request->bRequest == TUSB_REQ_CLEAR_FEATURE) &&
       (request->wValue == TUSB_REQ_FEATURE_EDPT_HALT))
   {
-    if((request->wIndex) == usbtmc_state.ep_bulk_out)
+    uint32_t ep_addr = (request->wIndex);
+    sprintf(bigMsg,"clearing usbtmc stall %lu", (uint32_t)ep_addr);
+    uart_tx_str_sync(bigMsg);
+    usbd_edpt_clear_stall(rhport, ep_addr);
+    if(ep_addr == usbtmc_state.ep_bulk_out)
     {
       usmtmcd_app_bulkOut_clearFeature_cb(rhport);
+      // And start a new OUT xfer request now that things are clear
+      TU_VERIFY( usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, 64));
     }
     else if ((request->wIndex) == usbtmc_state.ep_bulk_in)
     {
       usmtmcd_app_bulkIn_clearFeature_cb(rhport);
     }
-    return false; // We want USBD core to handle sending the status response, and clear the stall condition
+    tud_control_status(rhport, request);
+    return true; // We we fully handled it, so don't want the USBD core to do anything.
   }
 
   // We only handle class requests, IN direction.

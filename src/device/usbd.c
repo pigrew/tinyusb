@@ -580,6 +580,8 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
       if ( usbd_class_drivers[drv_id].control_request )
       {
         ret = usbd_class_drivers[drv_id].control_request(rhport, p_request);
+        if(ret)
+          return true;
       }
 
       // Then handle if it is standard request
@@ -944,6 +946,7 @@ void usbd_edpt_stall(uint8_t rhport, uint8_t ep_addr)
 
   dcd_edpt_stall(rhport, ep_addr);
   _usbd_dev.ep_stall_map[dir] = (uint8_t) tu_bit_set(_usbd_dev.ep_stall_map[dir], epnum);
+  _usbd_dev.ep_busy_map[dir] = (uint8_t) tu_bit_set(_usbd_dev.ep_busy_map[dir], epnum);
 }
 
 void usbd_edpt_clear_stall(uint8_t rhport, uint8_t ep_addr)
@@ -952,6 +955,7 @@ void usbd_edpt_clear_stall(uint8_t rhport, uint8_t ep_addr)
   uint8_t const dir   = tu_edpt_dir(ep_addr);
 
   dcd_edpt_clear_stall(rhport, ep_addr);
+  _usbd_dev.ep_busy_map[dir] = (uint8_t) tu_bit_clear(_usbd_dev.ep_busy_map[dir], epnum);
   _usbd_dev.ep_stall_map[dir] = (uint8_t) tu_bit_clear(_usbd_dev.ep_stall_map[dir], epnum);
 }
 
