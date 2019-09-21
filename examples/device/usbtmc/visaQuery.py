@@ -34,6 +34,8 @@ def test_trig():
 	
 	
 def test_mav():
+	inst.write("delay 50")
+	inst.read_stb() # clear STB
 	assert (inst.read_stb() == 0)
 	inst.write("123")
 	time.sleep(0.3)
@@ -60,8 +62,6 @@ def test_srq():
 	
 	rsp = inst.read()
 	assert(rsp == "123\r\n")
-	
-		
 
 def test_read_timeout():
 	inst.timeout = 500
@@ -78,7 +78,15 @@ def test_read_timeout():
 	t = time.time() - t0
 	assert ((t*1000.0) > (inst.timeout - 300))
 	assert ((t*1000.0) < (inst.timeout + 300))
-	print(f"Delay was {t}")
+	print(f"Delay was {t:0.3}")
+	# Response is still in queue, so send a clear (to be more helpful to the next test)
+	inst.clear()
+	
+def test_indicate():
+	usb_iface = inst.get_visa_attribute(visa.constants.VI_ATTR_USB_INTFC_NUM)
+	retv = inst.control_in(request_type_bitmap_field=0xA1, request_id=64, request_value=0x0000, index=usb_iface, length=0x0001)
+	assert((retv[1] == visa.constants.StatusCode(0)) and (retv[0] == b'\x01')), f"indicator pulse failed: retv={retv}"
+	
 
 rm = visa.ResourceManager("/c/Windows/system32/visa64.dll")
 reslist = rm.list_resources("USB?::?*::INSTR")
@@ -89,12 +97,13 @@ if (len(reslist) == 0):
 	
 inst = rm.open_resource(reslist[0]);
 inst.timeout = 3000
+
 inst.clear()
 
 print("+ IDN")
 test_idn()
 
-inst.timeout = 3000
+inst.timeout = 2000
 
 
 print("+ echo delay=0")
@@ -110,7 +119,7 @@ inst.write("delay 150")
 test_echo(53,76)
 test_echo(165,170)
 
-print("+ Read timeout (no MAV")
+print("+ Read timeout (no MAV)")
 test_read_timeout()
 
 print("+ MAV")
@@ -118,6 +127,9 @@ test_mav()
 
 print("+ SRQ")
 test_srq()
+
+print("+ indicate")
+test_indicate()
 
 print("+ TRIG")
 test_trig()

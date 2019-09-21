@@ -86,6 +86,7 @@ extern char bigMsg[200];
 do { \
 	  sprintf(bigMsg,"%s: %d: failed\r\n", __func__, __LINE__); \
 	  uart_tx_str_sync(bigMsg); \
+	  /*TU_BREAKPOINT();*/ \
 	 } while (0)
 
 

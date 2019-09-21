@@ -27,10 +27,7 @@
 
 #include "tusb_option.h"
 
-#if TUSB_OPT_DEVICE_ENABLED && ( CFG_TUSB_MCU == OPT_MCU_STM32F2 || \
-                                 CFG_TUSB_MCU == OPT_MCU_STM32F4 || \
-                                 CFG_TUSB_MCU == OPT_MCU_STM32H7 || \
-                                 CFG_TUSB_MCU == OPT_MCU_STM32F7)
+#if TUSB_OPT_DEVICE_ENABLED && ( 0 == 1)
 
 // TODO Support OTG_HS
 // EP_MAX       : Max number of bi-directional endpoints including EP0

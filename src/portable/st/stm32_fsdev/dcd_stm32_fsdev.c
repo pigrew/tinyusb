@@ -709,10 +709,12 @@ void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
 {
   (void)rhport;
 
-  if (ep_addr & 0x80) { // IN
-    ep_addr &= 0x7F;
-    pcd_set_ep_tx_status(USB, ep_addr, USB_EP_TX_STALL);
-  } else { // OUT
+  if (ep_addr & 0x80)
+  { // IN
+    pcd_set_ep_tx_status(USB, ep_addr & 0x7F, USB_EP_TX_STALL);
+  }
+  else
+  { // OUT
     pcd_set_ep_rx_status(USB, ep_addr, USB_EP_RX_STALL);
   }
 }
