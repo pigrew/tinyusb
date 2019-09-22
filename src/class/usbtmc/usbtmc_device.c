@@ -366,7 +366,8 @@ static bool handle_devMsgOut(uint8_t rhport, void *data, size_t len, size_t pack
     atEnd = true;
   if(len > usbtmc_state.transfer_size_remaining)
     len = usbtmc_state.transfer_size_remaining;
-  tud_usbtmc_app_msg_data_cb(rhport,data, len, atEnd);
+  TU_VERIFY(tud_usbtmc_app_msg_data_cb(rhport,data, len, atEnd));
+  // TODO: Go to an error state upon failure other than just stalling the EP?
 
   usbtmc_state.transfer_size_remaining -= len;
   usbtmc_state.transfer_size_sent += len;

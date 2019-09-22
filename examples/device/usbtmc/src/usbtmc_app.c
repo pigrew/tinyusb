@@ -109,6 +109,11 @@ bool tud_usbtmc_app_msgBulkOut_start_cb(uint8_t rhport, usbtmc_msg_request_dev_d
   (void)rhport;
   (void)msgHeader;
   buffer_len = 0;
+  if(msgHeader->TransferSize > sizeof(buffer))
+  {
+
+    return false;
+  }
   return true;
 }
 
@@ -122,6 +127,10 @@ bool tud_usbtmc_app_msg_data_cb(uint8_t rhport, void *data, size_t len, bool tra
   {
     memcpy(&(buffer[buffer_len]), data, len);
     buffer_len += len;
+  }
+  else
+  {
+    return false; // buffer overflow!
   }
   queryState = transfer_complete;
   idnQuery = 0;
