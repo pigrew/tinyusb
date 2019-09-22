@@ -84,6 +84,28 @@ def test_read_timeout():
 	inst.clear()
 	time.sleep(0.3)
 	assert(0 ==  (inst.read_stb() & 0x10)), "MAV not reset after clear"
+
+def test_abort_in():
+	inst.timeout = 200
+	# First read with no MAV
+	inst.read_stb()
+	assert (inst.read_stb() == 0)
+	inst.write("delay 500")
+	inst.write("xxx")
+	t0 = time.time()
+	try:
+		rsp = inst.read()
+		assert(false), "Read should have resulted in timeout"
+	except visa.VisaIOError:
+		print("Got expected exception")
+	t = time.time() - t0
+	assert ((t*1000.0) > (inst.timeout - 300))
+	assert ((t*1000.0) < (inst.timeout + 300))
+	print(f"Delay was {t:0.3}")
+	# Response is still in queue, so send a clear (to be more helpful to the next test)
+	inst.timeout = 800
+	y = inst.read()
+	assert(y == "xxx\r\n")
 	
 def test_indicate():
 	# perform indicator pulse
@@ -119,6 +141,10 @@ inst.clear()
 
 print("+ IDN")
 test_idn()
+
+print("+test abort in")
+test_abort_in()
+
 
 inst.timeout = 2000
 

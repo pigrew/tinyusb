@@ -919,8 +919,8 @@ bool usbd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
 
   TU_VERIFY( dcd_edpt_xfer(rhport, ep_addr, buffer, total_bytes) );
 
-  sprintf(bigMsg, "USBD_EP_XFER: ep=%lu,len=%lu\r\n",(uint32_t)ep_addr,(uint32_t)total_bytes);
-  uart_tx_str_sync(bigMsg);
+  //sprintf(bigMsg, "USBD_EP_XFER: ep=%lu,len=%lu\r\n",(uint32_t)ep_addr,(uint32_t)total_bytes);
+  //uart_tx_str_sync(bigMsg);
 
   _usbd_dev.ep_busy_map[dir] = (uint8_t) tu_bit_set(_usbd_dev.ep_busy_map[dir], epnum);
 
@@ -936,7 +936,6 @@ bool usbd_edpt_busy(uint8_t rhport, uint8_t ep_addr)
 
   return tu_bit_test(_usbd_dev.ep_busy_map[dir], epnum);
 }
-
 
 void usbd_edpt_stall(uint8_t rhport, uint8_t ep_addr)
 {

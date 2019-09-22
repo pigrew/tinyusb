@@ -574,7 +574,7 @@ bool usbtmcd_control_request_cb(uint8_t rhport, tusb_control_request_t const * r
     {
       rsp.USBTMC_status = USBTMC_STATUS_FAILED;
     }
-    else if(usbtmc_state.lastBulkOutTag == (request->wValue & 0xF7u))
+    else if(usbtmc_state.lastBulkOutTag == (request->wValue & 0x7Fu))
     {
       rsp.USBTMC_status = USBTMC_STATUS_TRANSFER_NOT_IN_PROGRESS;
     }
@@ -615,7 +615,7 @@ bool usbtmcd_control_request_cb(uint8_t rhport, tusb_control_request_t const * r
     TU_VERIFY(request->wIndex == usbtmc_state.ep_bulk_in);
     // wValue is the requested bTag to abort
     if((usbtmc_state.state == STATE_TX_REQUESTED || usbtmc_state.state == STATE_TX_INITIATED) &&
-        usbtmc_state.lastBulkInTag == (request->wValue & 0xf7u))
+        usbtmc_state.lastBulkInTag == (request->wValue & 0x7Fu))
     {
       rsp.USBTMC_status = USBTMC_STATUS_SUCCESS;
     usbtmc_state.transfer_size_remaining = 0u;
