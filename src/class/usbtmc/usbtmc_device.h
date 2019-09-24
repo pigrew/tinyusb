@@ -61,6 +61,7 @@ extern usbtmc_response_capabilities_t const tud_usbtmc_app_capabilities;
 // * tud_usbtmc_app_msgBulkIn_complete_cb
 // * tud_usbtmc_app_msg_trigger_cb
 // * (successful) tud_usbtmc_app_check_abort_bulk_out_cb
+// * (successful) tud_usbtmc_app_check_abort_bulk_in_cb
 // * (successful) usmtmcd_app_bulkOut_clearFeature_cb
 
 void tud_usbtmc_app_open_cb(uint8_t rhport, uint8_t interface_id);

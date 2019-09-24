@@ -336,8 +336,20 @@ bool usbtmcd_open_cb(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uin
 // state.
 bool usbtmcd_start_bus_read(uint8_t rhport)
 {
-
-  TU_VERIFY(atomicChangeState(STATE_NAK, STATE_IDLE));
+  usbtmcd_state_enum oldState = usbtmc_state.state;
+  switch(oldState)
+  {
+  // These may transition to IDLE
+  case STATE_NAK:
+  case STATE_ABORTING_BULK_IN_ABORTED:
+    TU_VERIFY(atomicChangeState(oldState, STATE_IDLE));
+    break;
+  // When receiving, let it remain receiving
+  case STATE_RCV:
+    break;
+  default:
+    TU_VERIFY(false);
+  }
   TU_VERIFY(usbd_edpt_xfer(rhport, usbtmc_state.ep_bulk_out, usbtmc_state.ep_bulk_out_buf, 64));
   return true;
 }
