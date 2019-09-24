@@ -323,7 +323,9 @@ void tud_task (void)
           uint8_t const ep_addr = event.xfer_complete.ep_addr;
           uint8_t const epnum   = tu_edpt_number(ep_addr);
           uint8_t const ep_dir  = tu_edpt_dir(ep_addr);
-
+          if(ep_addr != 0x80 && ep_addr != 0x00) {
+			  TU_ASSERT( usbd_edpt_busy(event.rhport, ep_addr),);
+          }
           _usbd_dev.ep_busy_map[ep_dir] = (uint8_t) tu_bit_clear(_usbd_dev.ep_busy_map[ep_dir], epnum);
 
           if ( 0 == epnum )
