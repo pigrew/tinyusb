@@ -78,6 +78,8 @@
 #define TU_BSWAP16(u16) (__builtin_bswap16(u16))
 #define TU_BSWAP32(u32) (__builtin_bswap32(u32))
 
+#define TU_MEMBAR() do {__sync_synchronize();} while(0)
+
 #elif defined(__TI_COMPILER_VERSION__)
   #define TU_ATTR_ALIGNED(Bytes)        __attribute__ ((aligned(Bytes)))
   #define TU_ATTR_SECTION(sec_name)     __attribute__ ((section(#sec_name)))
