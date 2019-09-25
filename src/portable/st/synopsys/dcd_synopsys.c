@@ -275,7 +275,8 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
   xfer_ctl_t * xfer = XFER_CTL_BASE(epnum, dir);
   xfer->max_size = desc_edpt->wMaxPacketSize.size;
 
-  if(dir == TUSB_DIR_OUT) {
+  if(dir == TUSB_DIR_OUT)
+  {
     out_ep[epnum].DOEPCTL |= (1 << USB_OTG_DOEPCTL_USBAEP_Pos) | \
       desc_edpt->bmAttributes.xfer << USB_OTG_DOEPCTL_EPTYP_Pos | \
       desc_edpt->wMaxPacketSize.size << USB_OTG_DOEPCTL_MPSIZ_Pos;
