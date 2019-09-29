@@ -50,6 +50,7 @@ typedef struct {
     unsigned int remote_wakeup_en      : 1; // enable/disable by host
     unsigned int remote_wakeup_support : 1; // configuration descriptor's attribute
     unsigned int self_powered          : 1; // configuration descriptor's attribute
+    unsigned int addr_set              : 1; // device address has been set (since last reset)
   };
 
   uint8_t ep_busy_map[2];  // bit mask for busy endpoint
@@ -394,6 +395,7 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
           // Depending on mcu, status phase could be sent either before or after changing device address
           // Therefore DCD must include zero-length status response
           dcd_set_address(rhport, (uint8_t) p_request->wValue);
+          _usbd_dev.addr_set = 1u;
           return true; // skip status
         break;
 
@@ -418,6 +420,16 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 
         case TUSB_REQ_GET_DESCRIPTOR:
           TU_VERIFY( process_get_descriptor(rhport, p_request) );
+          if(!_usbd_dev.addr_set)
+          {
+            // Due to the behavior of Windows 7, in the event of a device descriptor being
+            // more than (CFG_TUD_ENDPOINT0_SIZE-1) long, enumeration is delayed as the host
+            // prematurely send a status packet before all of the data packets are sent.
+            // Here, we will pre-queue the EP0 OUT status packet reception so that a premature
+            // status packet request will immediately be ACKed. The proper response should be
+            // STALL but this causes enumeration to fail.
+            tud_control_status(rhport, p_request);
+          }
         break;
 
         case TUSB_REQ_SET_FEATURE:
