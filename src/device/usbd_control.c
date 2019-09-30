@@ -46,6 +46,7 @@ typedef struct
   uint16_t len;
   uint16_t total_transferred;
   uint16_t requested_len;
+  bool status_sent;
 
   bool (*complete_cb) (uint8_t, tusb_control_request_t const *);
 } usbd_control_xfer_t;
@@ -62,6 +63,7 @@ void usbd_control_reset (uint8_t rhport)
 
 bool tud_control_status(uint8_t rhport, tusb_control_request_t const * request)
 {
+  _control_state.status_sent = true;
   // status direction is reversed to one in the setup packet
   return dcd_edpt_xfer(rhport, request->bmRequestType_bit.direction ? EDPT_CTRL_OUT : EDPT_CTRL_IN, NULL, 0);
 }
@@ -98,6 +100,7 @@ bool tud_control_xfer(uint8_t rhport, tusb_control_request_t const * request, vo
   _control_state.request = (*request);
   _control_state.buffer = buffer;
   _control_state.total_transferred = 0;
+  _control_state.status_sent = false;
   _control_state.requested_len = request->wLength;
   _control_state.len = len;
 
@@ -133,7 +136,6 @@ bool usbd_control_xfer_cb (uint8_t rhport, uint8_t ep_addr, xfer_result_t result
   _control_state.buffer = ((uint8_t*)_control_state.buffer) + xferred_bytes;
 
   if ( (_control_state.requested_len == _control_state.total_transferred) || xferred_bytes < CFG_TUD_ENDPOINT0_SIZE )
-
   {
     // DATA stage is complete
     bool is_ok = true;
@@ -148,7 +150,10 @@ bool usbd_control_xfer_cb (uint8_t rhport, uint8_t ep_addr, xfer_result_t result
     if ( is_ok )
     {
       // Send status
+      if(!_control_state.status_sent)
+      {
       TU_ASSERT( tud_control_status(rhport, &_control_state.request) );
+      }
     }
     else
     {
