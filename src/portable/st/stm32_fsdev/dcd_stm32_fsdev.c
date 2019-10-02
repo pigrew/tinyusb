@@ -103,17 +103,17 @@
 
 #include "tusb_option.h"
 
-#define STM32F1_FSDEV   ( \
-    defined(STM32F102x6) || defined(STM32F102xB) || \
+#if defined(STM32F102x6) || defined(STM32F102xB) || \
     defined(STM32F103x6) || defined(STM32F103xB) || \
-    defined(STM32F103xE) || defined(STM32F103xG)   \
-)
+    defined(STM32F103xE) || defined(STM32F103xG)
+#define STM32F1_FSDEV
+#endif
 
 #if (TUSB_OPT_DEVICE_ENABLED) && ( \
-      (CFG_TUSB_MCU == OPT_MCU_STM32F0                  ) || \
-      (CFG_TUSB_MCU == OPT_MCU_STM32F1 && STM32F1_FSDEV ) || \
-      (CFG_TUSB_MCU == OPT_MCU_STM32F3                  ) || \
-      (CFG_TUSB_MCU == OPT_MCU_STM32L0                  ) \
+      (CFG_TUSB_MCU == OPT_MCU_STM32F0                          ) || \
+      (CFG_TUSB_MCU == OPT_MCU_STM32F1 && defined(STM32F1_FSDEV)) || \
+      (CFG_TUSB_MCU == OPT_MCU_STM32F3                          ) || \
+      (CFG_TUSB_MCU == OPT_MCU_STM32L0                          ) \
     )
 
 // In order to reduce the dependance on HAL, we undefine this.
@@ -418,7 +418,7 @@ static uint16_t dcd_ep_ctr_handler(void)
           uint8_t userMemBuf[8];
           /* Get SETUP Packet*/
           count = pcd_get_ep_rx_cnt(USB, EPindex);
-          if(count == 8) // Setup packet should always be 8 bits. If not, ignore it, and try again.
+          if(count == 8) // Setup packet should always be 8 bytes. If not, ignore it, and try again.
           {
             // Must reset EP to NAK (in case it had been stalling) (though, maybe too late here)
             pcd_set_ep_rx_status(USB,0u,USB_EP_RX_NAK);
@@ -444,10 +444,6 @@ static uint16_t dcd_ep_ctr_handler(void)
           }
 
           /* Process Control Data OUT status Packet*/
-          /*if(EPindex == 0u && xfer->total_len == 0u)
-          {
-             pcd_clear_ep_kind(USB,0); // Good, so allow non-zero length packets now.
-          }*/
           dcd_event_xfer_complete(0, EPindex, xfer->total_len, XFER_RESULT_SUCCESS, true);
 
           pcd_set_ep_rx_cnt(USB, EPindex, CFG_TUD_ENDPOINT0_SIZE);
@@ -694,7 +690,6 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
     if (epnum == 0 && buffer == NULL)
     {
         xfer->buffer = (uint8_t*)_setup_packet;
-        //pcd_set_ep_kind(USB,0); // Expect a zero-byte INPUT
     }
     if(total_bytes > xfer->max_packet_size)
     {
