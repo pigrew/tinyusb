@@ -79,7 +79,7 @@ typedef struct TU_ATTR_ALIGNED(4)
   };
 } dcd_event_t;
 
-TU_VERIFY_STATIC(sizeof(dcd_event_t) <= 12, "size is not correct");
+//TU_VERIFY_STATIC(sizeof(dcd_event_t) <= 12, "size is not correct");
 
 /*------------------------------------------------------------------*/
 /* Device API
@@ -119,20 +119,21 @@ void dcd_edpt_stall       (uint8_t rhport, uint8_t ep_addr);
 // clear stall, data toggle is also reset to DATA0
 void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr);
 
-/*------------------------------------------------------------------*/
-/* Event Function
- * Called by DCD to notify device stack
- *------------------------------------------------------------------*/
-void dcd_event_handler(dcd_event_t const * event, bool in_isr);
+//--------------------------------------------------------------------+
+// Event API (Implemented by device stack)
+//--------------------------------------------------------------------+
+
+// Called by DCD to notify device stack
+extern void dcd_event_handler(dcd_event_t const * event, bool in_isr);
 
 // helper to send bus signal event
-void dcd_event_bus_signal (uint8_t rhport, dcd_eventid_t eid, bool in_isr);
+extern void dcd_event_bus_signal (uint8_t rhport, dcd_eventid_t eid, bool in_isr);
 
 // helper to send setup received
-void dcd_event_setup_received(uint8_t rhport, uint8_t const * setup, bool in_isr);
+extern void dcd_event_setup_received(uint8_t rhport, uint8_t const * setup, bool in_isr);
 
 // helper to send transfer complete event
-void dcd_event_xfer_complete (uint8_t rhport, uint8_t ep_addr, uint32_t xferred_bytes, uint8_t result, bool in_isr);
+extern void dcd_event_xfer_complete (uint8_t rhport, uint8_t ep_addr, uint32_t xferred_bytes, uint8_t result, bool in_isr);
 
 #ifdef __cplusplus
  }
