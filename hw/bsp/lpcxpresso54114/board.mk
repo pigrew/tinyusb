@@ -21,9 +21,11 @@ LD_FILE = $(MCU_DIR)/gcc/LPC54114J256_cm4_flash.ld
 SRC_C += \
 	$(MCU_DIR)/system_LPC54114_cm4.c \
 	$(MCU_DIR)/drivers/fsl_clock.c \
+	$(MCU_DIR)/drivers/fsl_flexcomm.c \
 	$(MCU_DIR)/drivers/fsl_gpio.c \
 	$(MCU_DIR)/drivers/fsl_power.c \
-	$(MCU_DIR)/drivers/fsl_reset.c
+	$(MCU_DIR)/drivers/fsl_reset.c \
+	$(MCU_DIR)/drivers/fsl_usart.c
 
 INC += \
 	$(TOP)/$(MCU_DIR)/../../CMSIS/Include \

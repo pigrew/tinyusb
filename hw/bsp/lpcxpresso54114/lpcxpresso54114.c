@@ -29,6 +29,7 @@
 #include "fsl_gpio.h"
 #include "fsl_power.h"
 #include "fsl_iocon.h"
+#include "fsl_usart.h"
 
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
@@ -48,6 +49,15 @@ void USB0_IRQHandler(void)
 // WAKE button
 #define BUTTON_PORT   0
 #define BUTTON_PIN    24
+
+// UART: Defaults to header J5, but will use Debugger USB-CDC after host transmits aynthing.
+#define BOARD_UART USART0
+#define BOARD_USART_CLK_SRC kCLOCK_Flexcomm0
+#define BOARD_USART_CLK_FREQ CLOCK_GetFlexCommClkFreq(0U)
+#define BOARD_UART_RX_PORT 0
+#define BOARD_UART_RX_PIN 0
+#define BOARD_UART_TX_PORT 0
+#define BOARD_UART_TX_PIN 1
 
 // IOCON pin mux
 #define IOCON_PIO_DIGITAL_EN     0x80u   /*!<@brief Enables digital function */
@@ -124,6 +134,23 @@ void board_init(void)
   gpio_pin_config_t const button_config = { kGPIO_DigitalInput, 0};
   GPIO_PinInit(GPIO, BUTTON_PORT, BUTTON_PIN, &button_config);
 
+  // UART
+  IOCON_PinMuxSet(IOCON, BOARD_UART_RX_PORT, BOARD_UART_RX_PIN, IOCON_FUNC1 | IOCON_GPIO_MODE | IOCON_DIGITAL_EN ); // RX
+  IOCON_PinMuxSet(IOCON, BOARD_UART_TX_PORT, BOARD_UART_TX_PIN, IOCON_FUNC1 | IOCON_GPIO_MODE | IOCON_DIGITAL_EN ); // TX
+  
+  // USART uses max 48 MHz clock.
+  // 12 MHz clock is convenient, and close enough for 115220 and below.
+  // The FRG could be used for more accurate clocking.
+  CLOCK_AttachClk(kFRO12M_to_FLEXCOMM0);
+  CLOCK_EnableClock(BOARD_USART_CLK_SRC);
+  usart_config_t usartConfig = {
+    .baudRate_Bps = 115200U,
+    .bitCountPerChar = kUSART_8BitsPerChar,
+    .parityMode = kUSART_ParityDisabled,
+    .stopBitCount = kUSART_OneStopBit
+  };
+  USART_Init(BOARD_UART, &usartConfig,/* srcClock_Hz = */ BOARD_USART_CLK_FREQ);
+
   // USB
   const uint32_t port1_pin6_config = (
     IOCON_PIO_FUNC7       | /* Pin is configured as USB0_VBUS */
@@ -162,7 +189,7 @@ int board_uart_read(uint8_t* buf, int len)
 
 int board_uart_write(void const * buf, int len)
 {
-  (void) buf; (void) len;
+  USART_WriteBlocking(BOARD_UART, buf, len);
   return 0;
 }
 
